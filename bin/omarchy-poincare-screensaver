@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# Runs the Poincare three-body screensaver inside a terminal that
+# omarchy-launch-poincare-screensaver has already set up.
+#
+# This mirrors Omarchy's own omarchy-screensaver: same black background, same
+# hidden cursor, same "any key or losing focus dismisses it" contract. Only the
+# program doing the drawing is different, so everything Omarchy already knows
+# about the org.omarchy.screensaver window keeps working.
+
+screensaver_in_focus() {
+  hyprctl activewindow -j | jq -e '.class == "org.omarchy.screensaver"' >/dev/null 2>&1
+}
+
+child=""
+
+exit_screensaver() {
+  hyprctl eval 'hl.config({ cursor = { invisible = false } })' &>/dev/null || hyprctl keyword cursor:invisible false &>/dev/null || true
+  [[ -n $child ]] && kill "$child" 2>/dev/null
+  pkill -f '[o]rg.omarchy.screensaver' 2>/dev/null
+  exit 0
+}
+
+trap exit_screensaver SIGINT SIGTERM SIGHUP SIGQUIT
+
+printf '\033]11;rgb:00/00/00\007' # Set background color to black
+
+hyprctl eval 'hl.config({ cursor = { invisible = true } })' &>/dev/null || hyprctl keyword cursor:invisible true &>/dev/null
+
+# Terminals allocate the pty at the default 80x24 and only resize it once the
+# compositor has told the window how big it is. The screensaver copes with a
+# resize, but waiting here avoids a frame of orbit drawn into the corner.
+wait_for_terminal_resize() {
+  local deadline=$((SECONDS + 2))
+  while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == "24 80" ]]; do
+    sleep 0.02
+  done
+}
+
+wait_for_terminal_resize
+
+# --managed: this script owns the keyboard and the exit, exactly as Omarchy's
+# wrapper owns them for ttfx.
+omarchy-poincare --managed "$@" &
+child=$!
+
+# Poll for a keypress, and for the screensaver having lost focus -- moving the
+# mouse on another monitor does not send us a key, but does move focus.
+while kill -0 "$child" 2>/dev/null; do
+  if read -r -n1 -t 1 || ! screensaver_in_focus; then
+    exit_screensaver
+  fi
+done
+
+exit_screensaver

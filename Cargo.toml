@@ -1,0 +1,22 @@
+[package]
+name = "omarchy-poincare"
+version = "0.1.0"
+edition = "2021"
+description = "Three-body screensaver for Omarchy: periodic Poincare/Newtonian orbits that morph into your branding"
+license = "MIT"
+
+[[bin]]
+name = "omarchy-poincare"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = "0.28"
+# Already in the tree via crossterm; used only to restore the default SIGPIPE.
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

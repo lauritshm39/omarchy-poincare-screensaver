@@ -1,0 +1,142 @@
+#!/bin/bash
+
+# The screensaver entry point installed by omarchy-poincare-screensaver, and
+# what Omarchy's idle timer is pointed at.
+#
+# Despite the name it is a chooser: `--screensaver` in the config file decides
+# whether it draws the three-body simulation, hands off to Omarchy's stock
+# screensaver, or picks one of them at random each time. Omarchy itself has no
+# notion of more than one screensaver, so the choosing has to happen here.
+#
+# When it does draw, it follows Omarchy's own omarchy-launch-screensaver
+# closely, including its multi-monitor sequencing, and deliberately reuses the
+# org.omarchy.screensaver app id and the stock per-terminal screensaver configs
+# so the window rules, fonts and padding are identical.
+#
+# Usage: omarchy-launch-poincare-screensaver [poincare|omarchy|random] [force]
+
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+CONFIG="${OMARCHY_POINCARE_CONFIG:-$HOME/.config/omarchy-poincare/config}"
+
+# Reads the last value of a setting from the config file, ignoring comments.
+config_value() {
+  [[ -f $CONFIG ]] || return 0
+  sed 's/[[:space:]]#.*//' "$CONFIG" | awk -v k="$1" '$1 == k { $1 = ""; sub(/^ +/, ""); print }' | tail -1
+}
+
+MODE=$(config_value --screensaver)
+MODE=${MODE:-poincare}
+FORCE=""
+
+for arg in "$@"; do
+  case $arg in
+  poincare | omarchy | random) MODE=$arg ;;
+  force) FORCE=force ;;
+  esac
+done
+
+if [[ $MODE == random ]]; then
+  # One coin flip per launch, so an idle machine alternates between them.
+  POOL=(poincare omarchy)
+  MODE=${POOL[RANDOM % ${#POOL[@]}]}
+fi
+
+if [[ $MODE == omarchy ]]; then
+  exec omarchy-launch-screensaver $FORCE
+fi
+
+if ! command -v omarchy-poincare >/dev/null; then
+  echo "omarchy-poincare is not on PATH; run install.sh" >&2
+  exit 1
+fi
+
+# Exit early if any screensaver is already running.
+pgrep -f '[o]rg.omarchy.screensaver' >/dev/null && exit 0
+
+# Honour the same off switch as the stock screensaver.
+if command -v omarchy-toggle-enabled >/dev/null &&
+  omarchy-toggle-enabled screensaver-off && [[ $FORCE != force ]]; then
+  exit 1
+fi
+
+# The terminal font size sets the resolution of the whole picture: the
+# screensaver draws with braille sub-cells, 2x4 dots per character, so halving
+# the font doubles the detail in each direction. Read from the same config file
+# the screensaver itself uses.
+FONT_SIZE=18
+from_config=$(config_value --font-size)
+[[ $from_config =~ ^[0-9]+([.][0-9]+)?$ ]] && FONT_SIZE=$from_config
+
+focused=$(omarchy-hyprland-monitor-focused)
+terminal=$(xdg-terminal-exec --print-id)
+
+case $terminal in
+*Alacritty* | *ghostty* | *foot* | *kitty*) ;;
+*)
+  omarchy-notification-send -g ✋ "Screensaver only runs in Alacritty, Foot, Ghostty, or Kitty"
+  exit 1
+  ;;
+esac
+
+hypr_focus_monitor() {
+  hyprctl dispatch "hl.dsp.focus({ monitor = \"$1\" })" >/dev/null 2>&1 || hyprctl dispatch focusmonitor "$1" >/dev/null
+}
+
+hypr_exec() {
+  local command
+  printf -v command '%q ' "$@"
+
+  hyprctl dispatch "hl.dsp.exec_cmd([[$command]])" >/dev/null 2>&1 || hyprctl dispatch exec -- bash -lc "$command" >/dev/null
+}
+
+SOCKET="$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+
+# Open Hyprland's event stream before spawning anything, so a terminal that maps
+# quickly can't emit its openwindow event before we are listening for it.
+#
+# Closed explicitly on every exit path. Left to itself, socat only dies when it
+# next writes into the closed pipe and takes an EPIPE, so it can linger holding
+# a connection to Hyprland's event socket for as long as the compositor happens
+# to stay quiet. This process is spawned by quickshell, so anything left behind
+# here is one fork away from the shell's own descriptors.
+exec {events}< <(socat -U - "UNIX-CONNECT:$SOCKET")
+socat_pid=$!
+cleanup_events() {
+  exec {events}<&- 2>/dev/null
+  [[ -n ${socat_pid:-} ]] && kill "$socat_pid" 2>/dev/null
+  wait "$socat_pid" 2>/dev/null
+}
+trap cleanup_events EXIT
+
+# hypr_exec is async and a new window maps on whatever monitor is focused at that
+# moment. Block until this monitor's screensaver actually opens before moving
+# focus on -- otherwise slow-starting terminals all pile onto the last monitor.
+wait_for_screensaver_window() {
+  local line deadline=$((SECONDS + 5))
+  while ((SECONDS < deadline)) && IFS= read -r -t $((deadline - SECONDS)) -u "$events" line; do
+    [[ $line == openwindow\>\>*,org.omarchy.screensaver,* ]] && return 0
+  done
+}
+
+for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
+  hypr_focus_monitor "$m"
+
+  case $terminal in
+  *Alacritty*)
+    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -o "font.size=$FONT_SIZE" -e omarchy-poincare-screensaver
+    ;;
+  *ghostty*)
+    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size="$FONT_SIZE" -e omarchy-poincare-screensaver
+    ;;
+  *foot*)
+    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" --font="JetBrainsMono Nerd Font:size=$FONT_SIZE" -e omarchy-poincare-screensaver
+    ;;
+  *kitty*)
+    hypr_exec kitty --class=org.omarchy.screensaver --override "font_size=$FONT_SIZE" --override window_padding_width=0 -e omarchy-poincare-screensaver
+    ;;
+  esac
+
+  wait_for_screensaver_window
+done
+
+hypr_focus_monitor "$focused"

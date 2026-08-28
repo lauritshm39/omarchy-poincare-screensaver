@@ -1,0 +1,8 @@
+/target
+
+# Local debugging notes from the omarchy-shell memory investigation.
+# Excluded deliberately, not by accident: it records this machine's home paths,
+# boot IDs and coredump paths, and it names a third-party plugin as the probable
+# cause of a serious bug on circumstantial evidence. Both are fine to keep
+# locally; publishing them is a different decision. Delete this line to include.
+/INVESTIGATION.md
