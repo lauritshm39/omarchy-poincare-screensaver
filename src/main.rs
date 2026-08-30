@@ -191,10 +191,10 @@ enum Action {
 fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
     let reject = |what: String| -> bool {
         if strict {
-            eprintln!("omarchy-poincare: {what}");
+            warn(format_args!("omarchy-poincare: {what}"));
             std::process::exit(2);
         }
-        eprintln!("omarchy-poincare: ignoring config: {what}");
+        warn(format_args!("omarchy-poincare: ignoring config: {what}"));
         false
     };
 
@@ -333,7 +333,9 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
             other => {
                 let other = other.to_string();
                 if strict {
-                    eprintln!("omarchy-poincare: unknown option: {other}\n\n{HELP}");
+                    warn(format_args!(
+                        "omarchy-poincare: unknown option: {other}\n\n{HELP}"
+                    ));
                     std::process::exit(2);
                 }
                 reject(format!("unknown option: {other}"));
@@ -342,6 +344,36 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
         i += 1;
     }
     Action::Run
+}
+
+/// Writes a diagnostic line to stderr, ignoring any failure to deliver it.
+///
+/// `eprintln!` panics when the write fails, and with `panic = "abort"` that
+/// becomes a SIGABRT and a core dump. Our stderr is the terminal the
+/// screensaver draws in, and the lock screen tears that down without warning;
+/// writes to the dead pty then fail with EIO. A diagnostic we cannot deliver
+/// is not worth crashing over.
+fn warn(args: std::fmt::Arguments) {
+    let _ = writeln!(std::io::stderr(), "{args}");
+}
+
+/// `print!`/`println!` for a process whose stdout may already be gone.
+///
+/// Same hazard as [`warn`]: the standard macros panic when the write fails,
+/// and `panic = "abort"` turns that into a SIGABRT. These paths only run for
+/// `--help`, `--list`, `--verify` and `--show-palette`, but there is no reason
+/// for them to be the one way left to abort on a terminal that went away.
+macro_rules! say {
+    ($($arg:tt)*) => {{ let _ = write!(std::io::stdout(), $($arg)*); }};
+}
+macro_rules! sayln {
+    ($($arg:tt)*) => {{ let _ = writeln!(std::io::stdout(), $($arg)*); }};
+}
+
+/// True when a write failed because whatever we were drawing on has gone away.
+/// Closing a pty gives EIO; closing a pipe gives EPIPE.
+fn terminal_is_gone(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::BrokenPipe || e.raw_os_error() == Some(libc::EIO)
 }
 
 fn main() {
@@ -361,7 +393,7 @@ fn main() {
 
     match action {
         Action::Help => {
-            print!("{HELP}");
+            say!("{HELP}");
             return;
         }
         Action::List => return list(),
@@ -372,26 +404,34 @@ fn main() {
 
     if let Err(e) = run(o) {
         // The terminal is already restored by the guard at this point.
-        eprintln!("omarchy-poincare: {e}");
+        //
+        // Losing the terminal is the ordinary way this process ends: the idle
+        // timer draws the screensaver, then the lock screen takes over and the
+        // window goes with it. Every write after that fails, and that is a
+        // normal shutdown rather than something to report.
+        if terminal_is_gone(&e) {
+            return;
+        }
+        warn(format_args!("omarchy-poincare: {e}"));
         std::process::exit(1);
     }
 }
 
 
 fn list() {
-    println!("{:<16} {:<12} {:>10}  {}", "KEY", "FAMILY", "PERIOD", "NAME");
+    sayln!("{:<16} {:<12} {:>10}  {}", "KEY", "FAMILY", "PERIOD", "NAME");
     for o in orbits::ORBITS {
         let mark = if orbits::is_reliable(o) { "" } else { "  *" };
-        println!("{:<16} {:<12} {:>10.4}  {}{}", o.key, o.family, o.period, o.name, mark);
+        sayln!("{:<16} {:<12} {:>10.4}  {}{}", o.key, o.family, o.period, o.name, mark);
     }
-    println!(
+    sayln!(
         "\n{} orbits, {} of them picked at random by default.",
         orbits::ORBITS.len(),
         orbits::reliable().len()
     );
-    println!("Use --orbit <key>, or leave it out for random.");
-    println!("* published initial conditions do not survive a full period; still");
-    println!("  selectable by name. Run --verify for the measurements.");
+    sayln!("Use --orbit <key>, or leave it out for random.");
+    sayln!("* published initial conditions do not survive a full period; still");
+    sayln!("  selectable by name. Run --verify for the measurements.");
 }
 
 fn verify() {
@@ -403,14 +443,14 @@ fn verify() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(orbits::MAX_DT);
 
-    println!("Integrating every orbit for exactly one period, with the adaptive");
-    println!("stepper capped at dt = {max_dt:e}.\n");
-    println!("  DRIFT   largest per-body displacement from the starting configuration");
-    println!("          after one period, relative to that configuration's own size");
-    println!("  ENERGY  relative change in total energy over the same integration");
-    println!("  USABLE  fraction of a period before a body is flung away; the");
-    println!("          screensaver replays only this much\n");
-    println!(
+    sayln!("Integrating every orbit for exactly one period, with the adaptive");
+    sayln!("stepper capped at dt = {max_dt:e}.\n");
+    sayln!("  DRIFT   largest per-body displacement from the starting configuration");
+    sayln!("          after one period, relative to that configuration's own size");
+    sayln!("  ENERGY  relative change in total energy over the same integration");
+    sayln!("  USABLE  fraction of a period before a body is flung away; the");
+    sayln!("          screensaver replays only this much\n");
+    sayln!(
         "{:<16} {:>9} {:>10} {:>9} {:>7} {:>13}  {}",
         "KEY", "PERIOD", "DRIFT", "ENERGY", "USABLE", "VIEW BOX", "VERDICT"
     );
@@ -450,19 +490,19 @@ fn verify() {
             (true, false) => "closes, but is marked unreliable -- update UNRELIABLE",
             (false, true) => "DOES NOT CLOSE but is not marked unreliable",
         };
-        println!(
+        sayln!(
             "{:<16} {:>9.3} {:>10.2e} {:>9.1e} {:>6.0}% {:>6.2}x{:<6.2}  {}",
             o.key, o.period, drift, eerr, usable * 100.0, bw, bh, verdict
         );
     }
 
-    println!();
-    println!("`lagrange` and `euler` are derived in code rather than transcribed, so");
-    println!("they close to machine precision and act as a check on the integrator.");
-    println!("The rest come from Suvakov & Dmitrasinovic (PRL 110, 114301) at five or");
-    println!("six significant digits, which the long-period members cannot survive.");
+    sayln!();
+    sayln!("`lagrange` and `euler` are derived in code rather than transcribed, so");
+    sayln!("they close to machine precision and act as a check on the integrator.");
+    sayln!("The rest come from Suvakov & Dmitrasinovic (PRL 110, 114301) at five or");
+    sayln!("six significant digits, which the long-period members cannot survive.");
     if disagreements > 0 {
-        println!("\n{disagreements} orbit(s) disagree with orbits::UNRELIABLE -- fix that list.");
+        sayln!("\n{disagreements} orbit(s) disagree with orbits::UNRELIABLE -- fix that list.");
         std::process::exit(1);
     }
 }
@@ -478,17 +518,17 @@ fn show_palette(spec: &str) {
             palette::hex(c)
         )
     };
-    println!("Source:     {}", p.source);
+    sayln!("Source:     {}", p.source);
     match palette::theme_dir() {
-        Some(d) => println!("Theme dir:  {}", d.display()),
-        None => println!("Theme dir:  not found"),
+        Some(d) => sayln!("Theme dir:  {}", d.display()),
+        None => sayln!("Theme dir:  not found"),
     }
-    println!();
-    println!("background  {}", swatch(p.background));
-    println!("logo        {}", swatch(p.logo_rest));
+    sayln!();
+    sayln!("background  {}", swatch(p.background));
+    sayln!("logo        {}", swatch(p.logo_rest));
     for (i, b) in p.bodies.iter().enumerate() {
-        println!("body {}      {}", i + 1, swatch(b.trail));
-        println!("  core      {}", swatch(b.core));
+        sayln!("body {}      {}", i + 1, swatch(b.trail));
+        sayln!("  core      {}", swatch(b.core));
     }
 }
 
@@ -839,6 +879,35 @@ fn draw_art(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Losing the terminal is how the screensaver normally ends -- the lock
+    /// screen takes the window away mid-draw -- so it must not be mistaken
+    /// for a failure worth reporting. Reporting it is what used to abort.
+    #[test]
+    fn a_dead_terminal_is_recognised_as_a_normal_shutdown() {
+        let eio = std::io::Error::from_raw_os_error(libc::EIO);
+        assert!(terminal_is_gone(&eio), "a closed pty gives EIO");
+
+        let epipe = std::io::Error::from_raw_os_error(libc::EPIPE);
+        assert!(terminal_is_gone(&epipe), "a closed pipe gives EPIPE");
+    }
+
+    /// The risk in the fix above is swallowing genuine errors along with the
+    /// dead terminal, leaving the screensaver failing silently.
+    #[test]
+    fn other_errors_are_not_mistaken_for_a_dead_terminal() {
+        let empty = std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "the morph target is empty -- nothing to assemble into",
+        );
+        assert!(!terminal_is_gone(&empty));
+
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert!(!terminal_is_gone(&missing));
+
+        let denied = std::io::Error::from_raw_os_error(libc::EACCES);
+        assert!(!terminal_is_gone(&denied));
+    }
 
     fn parse(args: &[&str]) -> Opts {
         let mut o = Opts::default();

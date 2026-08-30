@@ -64,7 +64,9 @@ impl Palette {
                 .and_then(|d| Palette::from_theme(&d))
                 .unwrap_or_else(Palette::reference),
             path => Palette::from_theme(Path::new(path)).unwrap_or_else(|| {
-                eprintln!("omarchy-poincare: no colours in {path:?}; using the built-in palette");
+                crate::warn(format_args!(
+                    "omarchy-poincare: no colours in {path:?}; using the built-in palette"
+                ));
                 Palette::reference()
             }),
         }
