@@ -33,7 +33,7 @@ is what the idle timer calls.
 
 ```
 --screensaver poincare    # the three-body simulation (default)
---screensaver starry      # the starfield (once feature/starry-gather lands)
+--screensaver starry      # the starfield
 --screensaver omarchy     # hand off to Omarchy's stock ttfx screensaver
 --screensaver random      # one of the three, chosen afresh on every launch
 ```
@@ -51,15 +51,25 @@ omarchy-launch-screensavers random
 
 ## Options
 
-`omarchy-screensaver-poincare --help` is authoritative; this is the same list with context.
+`omarchy-screensaver-poincare --help` and `omarchy-screensaver-starry --help`
+are authoritative; this is the same list with context. Both binaries read the
+same config file; each accepts (and ignores) the other's specific options, so
+`--orbit figure-eight` alongside `--stars 1500` warns nowhere whichever binary
+runs.
 
-### Orbit
+### Orbit (poincare only)
 
 | option | default | |
 |---|---|---|
 | `--orbit <key\|random>` | `random` | Which simulation to run. Keys from `--list`. |
 | `--layout <single\|grid>` | `single` | One orbit, or the whole library tiled at once. |
 | `--periods <n>` | `2` | Orbit periods drawn per orbit phase. Higher redraws the curve more times in the same wall-clock. |
+
+### Sky (starry only)
+
+| option | default | |
+|---|---|---|
+| `--stars <n>` | canvas-scaled | How many stars. Defaults scale with the area, 400..4000. |
 
 ### What it morphs into
 
@@ -97,17 +107,18 @@ alone, since enlarging it would turn it to mush.
 
 | phase | option | default | |
 |---|---|---|---|
-| orbit | `--sim <s>` | `10` | bodies trace the trajectory, trails accumulate |
-| morph | `--morph <s>` | `2.6` | every trail dot spirals in to a glyph cell |
-| hold | `--hold <s>` | `5` | logo settles from the bodies' colours to the theme foreground |
-| scatter | `--scatter <s>` | `1.6` | flies apart, then a new random orbit |
+| gather | `--sim <s>` | `10` poincare / `8` starry | orbit traced (or stars drift), sources accumulate |
+| morph | `--morph <s>` | `2.6` | every source dot spirals in to a glyph cell |
+| hold | `--hold <s>` | `5` | logo settles from the gathered colours to the theme foreground |
+| scatter | `--scatter <s>` | `1.6` | flies apart, then a new round |
 
 Plus `--fps <n>` (default `60`).
 
-To watch a whole cycle immediately, without waiting out the orbit phase:
+To watch a whole cycle immediately, without waiting out the gather phase:
 
 ```bash
 omarchy-screensaver-poincare --sim 3 --once
+omarchy-screensaver-starry --sim 3 --once
 ```
 
 ### Appearance

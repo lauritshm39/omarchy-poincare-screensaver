@@ -6,7 +6,8 @@ terminal renderer, one morph engine and one launcher.
 - **poincare**: a periodic solution of the Newtonian three-body problem
   traced out in the terminal, which then collapses into the Omarchy logo —
   or any name you like.
-- **starry** (coming soon): a twinkling starfield that gathers into the logo.
+- **starry**: a twinkling starfield, with the odd shooting star, that gathers
+  into the logo.
 
 In 1890 Poincaré showed the three-body problem has no general closed-form
 solution and depends sensitively on its initial conditions. What does exist is a
@@ -63,13 +64,19 @@ omarchy-screensaver-poincare --text "LAURITS"      # morph into a name instead
 omarchy-screensaver-poincare --list                # the orbit library
 omarchy-screensaver-poincare --palette             # colours resolved from your theme
 omarchy-screensaver-poincare --verify              # check every orbit really is periodic
+
+omarchy-screensaver-starry --text "OMARCHY" --once # the starfield gathering into a name
+omarchy-screensaver-starry --stars 1500            # a denser sky
 ```
+
+Choose between them (and the stock screensaver) with `--screensaver` —
+see **[Configuration](docs/configuration.md#choosing-which-screensaver-runs)**.
 
 Settings live in `~/.config/omarchy-screensavers/config`, since the launcher passes
 no arguments of its own — see **[Configuration](docs/configuration.md)**.
 
-The cycle is orbit (10s) → collapse into the logo (2.6s) → hold (5s) →
-scatter (1.6s) → next random orbit.
+The cycle is gather (orbit 10s, starfield 8s) → collapse into the logo (2.6s)
+→ hold (5s) → scatter (1.6s) → next round.
 
 ## Tests
 

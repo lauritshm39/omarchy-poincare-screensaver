@@ -2,11 +2,14 @@
 
 [← README](../README.md) · [Configuration](configuration.md) · [Orbits](orbits.md)
 
-The cycle is orbit → collapse → hold → scatter → next orbit.
+The cycle is gather → collapse → hold → scatter → next round. Poincare's
+gather phase runs orbits; starry's drifts a starfield. Everything after the
+gather is the shared stage machine.
 
 | module | |
 |---|---|
 | `crates/poincare/{physics,orbits,sim}.rs` | the three-body system, the orbit library, the orbit runner |
+| `crates/starry/starry.rs` | the twinkling starfield gather phase |
 | `crates/core/{canvas,morph,target,palette,rng}.rs` | shared braille canvas, morph, art, colours, PRNG |
 | `crates/core/stage.rs` | the shared gather → morph → hold → scatter phase machine |
 | `crates/core/config.rs` | the shared config file |
@@ -44,6 +47,10 @@ not on coverage for its own sake:
   cleared.
 - **`morph`** — that particles start on a source and land on a target, that
   every glyph cell is claimed, and that mismatched cloud sizes still pair up.
+- **`starry`** — that the star count scales with the canvas and stays bounded,
+  that twinkle stays in range, that drift wraps so stars never leave, that
+  sources cover the canvas rather than clumping, and that far stars outnumber
+  near ones.
 
 One test is worth knowing about: `every_option_in_the_help_text_is_actually_accepted`
 parses `--help` and feeds every flag it mentions back through the argument

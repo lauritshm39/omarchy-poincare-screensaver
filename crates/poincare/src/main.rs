@@ -220,6 +220,11 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
             "--screensaver" => {
                 let _ = value(&mut i, "--screensaver");
             }
+            // Starry's options: accepted and ignored so one config file
+            // serves every screensaver in the collection.
+            "--stars" => {
+                let _ = value(&mut i, "--stars");
+            }
             "--stroke" => {
                 if let Some(n) = number(&mut i, "--stroke") {
                     o.stroke = Some(n.clamp(0.0, 12.0));
@@ -622,11 +627,12 @@ mod tests {
         assert!(parse(&["--fps", "0"]).fps >= 5.0);
     }
 
-    /// Read by the launcher, not by the binary -- but they share one config
-    /// file, so these must not produce warnings or eat the next option.
+    /// Read by the launcher or the sibling binary, not by this one -- but they
+    /// share one config file, so these must not produce warnings or eat the
+    /// next option.
     #[test]
     fn launcher_only_options_are_accepted_and_ignored() {
-        let o = parse(&["--font-size", "8", "--screensaver", "random", "--sim", "7"]);
+        let o = parse(&["--font-size", "8", "--screensaver", "random", "--stars", "800", "--sim", "7"]);
         assert_eq!(o.sim, 7.0);
     }
 
