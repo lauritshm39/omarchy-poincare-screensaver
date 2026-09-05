@@ -1,12 +1,17 @@
 #!/bin/bash
 
-# Runs the Poincare three-body screensaver inside a terminal that
-# omarchy-launch-poincare-screensaver has already set up.
+# Runs one of the omarchy-screensavers binaries inside a terminal that
+# omarchy-launch-screensavers has already set up.
+#
+# Usage: omarchy-screensaver-run <binary> [args...]
 #
 # This mirrors Omarchy's own omarchy-screensaver: same black background, same
 # hidden cursor, same "any key or losing focus dismisses it" contract. Only the
 # program doing the drawing is different, so everything Omarchy already knows
 # about the org.omarchy.screensaver window keeps working.
+
+BIN="${1:-omarchy-screensaver-poincare}"
+shift || true
 
 screensaver_in_focus() {
   hyprctl activewindow -j | jq -e '.class == "org.omarchy.screensaver"' >/dev/null 2>&1
@@ -29,7 +34,7 @@ hyprctl eval 'hl.config({ cursor = { invisible = true } })' &>/dev/null || hyprc
 
 # Terminals allocate the pty at the default 80x24 and only resize it once the
 # compositor has told the window how big it is. The screensaver copes with a
-# resize, but waiting here avoids a frame of orbit drawn into the corner.
+# resize, but waiting here avoids a frame drawn into the corner.
 wait_for_terminal_resize() {
   local deadline=$((SECONDS + 2))
   while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == "24 80" ]]; do
@@ -41,7 +46,7 @@ wait_for_terminal_resize
 
 # --managed: this script owns the keyboard and the exit, exactly as Omarchy's
 # wrapper owns them for ttfx.
-omarchy-poincare --managed "$@" &
+"$BIN" --managed "$@" &
 child=$!
 
 # Poll for a keypress, and for the screensaver having lost focus -- moving the

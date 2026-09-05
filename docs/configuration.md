@@ -3,12 +3,12 @@
 [← README](../README.md) · [Orbits](orbits.md) · [Internals](internals.md)
 
 The launcher passes no arguments of its own, so settings live in
-`~/.config/omarchy-poincare/config`. One option per line, `#` starts a comment,
+`~/.config/omarchy-screensavers/config`. One option per line, `#` starts a comment,
 and an option's value is the rest of its line — so `--text MY NAME` needs no
 quoting. Anything typed on the command line overrides the file.
 
 ```
-# ~/.config/omarchy-poincare/config
+# ~/.config/omarchy-screensavers/config
 --font-size 8             # resolution of the picture
 --sim 10                  # seconds of orbit before it collapses into the logo
 # --orbit figure-eight    # commented out: pick at random
@@ -19,7 +19,7 @@ idle timer launches the screensaver with no terminal to read an error from, and
 a stray character is no reason for it to stop appearing:
 
 ```
-omarchy-poincare: ignoring config: --sim expects a number, got "banana"
+omarchy-screensaver-poincare: ignoring config: --sim expects a number, got "banana"
 ```
 
 Typing the same mistake on the command line does stop, since someone is there
@@ -33,8 +33,9 @@ is what the idle timer calls.
 
 ```
 --screensaver poincare    # the three-body simulation (default)
+--screensaver starry      # the starfield (once feature/starry-gather lands)
 --screensaver omarchy     # hand off to Omarchy's stock ttfx screensaver
---screensaver random      # one of the two, chosen afresh on every launch
+--screensaver random      # one of the three, chosen afresh on every launch
 ```
 
 `random` re-rolls per launch, so an idle machine alternates between them. With
@@ -44,13 +45,13 @@ that is stock behaviour.
 The mode can also be given as an argument, which overrides the config file:
 
 ```bash
-omarchy-launch-poincare-screensaver omarchy    # stock, just this once
-omarchy-launch-poincare-screensaver random
+omarchy-launch-screensavers omarchy    # stock, just this once
+omarchy-launch-screensavers random
 ```
 
 ## Options
 
-`omarchy-poincare --help` is authoritative; this is the same list with context.
+`omarchy-screensaver-poincare --help` is authoritative; this is the same list with context.
 
 ### Orbit
 
@@ -73,7 +74,7 @@ omarchy-launch-poincare-screensaver random
 
 | option | default | |
 |---|---|---|
-| `--screensaver <poincare\|omarchy\|random>` | `poincare` | Read by the launcher — see above. |
+| `--screensaver <poincare\|starry\|omarchy\|random>` | `poincare` | Read by the launcher — see above. |
 
 By default the target is `~/.config/omarchy/branding/screensaver.txt` — the same
 file `omarchy branding screensaver` manages, falling back to the stock logo. Set
@@ -106,7 +107,7 @@ Plus `--fps <n>` (default `60`).
 To watch a whole cycle immediately, without waiting out the orbit phase:
 
 ```bash
-omarchy-poincare --sim 3 --once
+omarchy-screensaver-poincare --sim 3 --once
 ```
 
 ### Appearance
@@ -133,9 +134,9 @@ at the start of every cycle — so switching themes takes effect within one orbi
 without restarting anything.
 
 ```bash
-omarchy-poincare --palette          # show the colours resolved from your theme
-omarchy-poincare --theme off        # the built-in amber/periwinkle palette
-omarchy-poincare --theme <dir>      # read a specific theme directory
+omarchy-screensaver-poincare --palette          # show the colours resolved from your theme
+omarchy-screensaver-poincare --theme off        # the built-in amber/periwinkle palette
+omarchy-screensaver-poincare --theme <dir>      # read a specific theme directory
 ```
 
 Three body colours are chosen from the theme's accents by greedy maximum hue

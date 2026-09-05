@@ -13,7 +13,7 @@
 //! with G = m = 1, so the centre of mass starts at rest at the origin.
 //!
 //! The published (vx, vy, T) values are transcriptions, and a chaotic system is
-//! unforgiving of a wrong digit. `omarchy-poincare --verify` integrates each
+//! unforgiving of a wrong digit. `omarchy-screensaver-poincare --verify` integrates each
 //! orbit for exactly one period and reports how far it lands from its starting
 //! state, so every entry here can be checked rather than trusted.
 

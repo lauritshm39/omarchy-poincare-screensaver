@@ -1,9 +1,10 @@
 //! Running one orbit and turning it into dots.
 
-use crate::canvas::{Canvas, Rgb};
 use crate::orbits::Orbit;
-use crate::palette::{self, Palette};
 use crate::physics::{System, Vec2};
+use omarchy_screensaver_core::canvas::{Canvas, Rgb};
+use omarchy_screensaver_core::palette::{self, Palette};
+use omarchy_screensaver_core::stage::{self, GatherPhase, Style};
 use std::collections::VecDeque;
 
 /// World coordinates to dot coordinates. Braille dots are near enough square at
@@ -40,25 +41,10 @@ impl View {
     }
 }
 
-/// How heavy the drawing is. Both scale with the canvas so that raising the
-/// resolution makes the picture finer rather than merely thinner.
-#[derive(Clone, Copy)]
-pub struct Style {
-    /// Radius of the trail brush, in dots. 0 is a single-dot line.
-    pub stroke: i32,
-    /// Radius of a body's glow, in dots.
-    pub body: i32,
-}
-
-impl Style {
-    pub fn auto(dots_h: usize, stroke: Option<f64>, body: Option<f64>) -> Style {
-        let h = dots_h as f64;
-        Style {
-            stroke: stroke.unwrap_or((h / 170.0).clamp(1.0, 5.0)).round() as i32,
-            body: body.unwrap_or((h / 28.0).clamp(4.0, 20.0)).round() as i32,
-        }
-    }
-}
+/// How heavy the drawing is lives in core now ([`Style`][core_style]); this
+/// module keeps only the orbit-specific view fitting.
+///
+/// [core_style]: omarchy_screensaver_core::stage::Style
 
 pub struct Sim {
     pub orbit: &'static Orbit,
@@ -186,7 +172,7 @@ impl Sim {
                 // lets the same code work on a light theme.
                 c.line(a.0, a.1, z.0, z.1, palette::mix(pal.background, col, b), b, style.stroke);
             }
-            glow(c, self.heads[i].0, self.heads[i].1, &pal.bodies[i], pal.background, style.body);
+            stage::glow(c, self.heads[i].0, self.heads[i].1, &pal.bodies[i], pal.background, style.body);
         }
     }
 
@@ -201,44 +187,17 @@ impl Sim {
     }
 }
 
-/// A body: white-hot centre with a small coloured halo. Braille gives one
-/// colour per cell, so the halo has to be built from neighbouring dots.
-/// A body: a solid bright core inside a soft halo of its own hue.
-///
-/// A single falloff curve does not work here. Braille gives one colour per
-/// cell, so "brightness" is only ever a colour mixed toward the background, and
-/// a smooth falloff spends most of its radius nearly invisible -- enlarging it
-/// then adds halo nobody can see rather than a bigger body. A flat core with a
-/// shorter falloff around it is what actually reads as a glowing point.
-pub fn glow(c: &mut Canvas, x: f64, y: f64, col: &palette::BodyColour, bg: Rgb, r: i32) {
-    let (cx, cy) = (x.round() as i32, y.round() as i32);
-    let radius = r.max(1) as f32;
-    let core = (radius * 0.42).max(1.0);
+impl GatherPhase for Sim {
+    fn advance(&mut self) {
+        Sim::advance(self);
+    }
 
-    for dy in -r..=r {
-        for dx in -r..=r {
-            let d = ((dx * dx + dy * dy) as f32).sqrt();
-            if d > radius {
-                continue;
-            }
-            let t = if d <= core {
-                1.0
-            } else {
-                (1.0 - (d - core) / (radius - core + 0.8)).clamp(0.0, 1.0).powf(1.5)
-            };
-            if t < 0.04 {
-                continue;
-            }
-            let colour = palette::mix(col.trail, col.core, t);
-            c.dot(
-                cx + dx,
-                cy + dy,
-                palette::mix(bg, colour, 0.40 + 0.60 * t),
-                // Weighted well above the trail so a body crossing its own tail
-                // still reads as the bright thing in that cell.
-                2.0 + t * 10.0,
-            );
-        }
+    fn draw(&self, canvas: &mut Canvas, pal: &Palette, style: Style) {
+        Sim::draw(self, canvas, pal, style);
+    }
+
+    fn source_points(&self, out: &mut Vec<(f64, f64, Rgb)>, pal: &Palette) {
+        Sim::source_points(self, out, pal);
     }
 }
 

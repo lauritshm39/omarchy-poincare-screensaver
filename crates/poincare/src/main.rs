@@ -1,31 +1,26 @@
-//! omarchy-poincare -- a three-body screensaver for Omarchy.
+//! omarchy-screensaver-poincare -- a three-body screensaver for Omarchy.
 //!
 //! Runs a periodic solution of the planar three-body problem in the terminal,
 //! then collapses its trails into whatever `omarchy branding screensaver` has
 //! set, holds, scatters, and moves on to the next orbit.
 
-mod canvas;
-mod morph;
 mod orbits;
-mod palette;
 mod physics;
-mod rng;
 mod sim;
-mod target;
 
-use canvas::{Canvas, Renderer, Rgb};
-use palette::Palette;
-use morph::Morph;
-use rng::Rng;
-use sim::{Sim, Style};
-use std::io::Write;
-use std::time::{Duration, Instant};
+use omarchy_screensaver_core::canvas::{Canvas, Rgb};
+use omarchy_screensaver_core::config::config_args;
+use omarchy_screensaver_core::palette::{self, Palette};
+use omarchy_screensaver_core::rng::Rng;
+use omarchy_screensaver_core::stage::{self, StageArt, StageOpts};
+use omarchy_screensaver_core::{say, sayln, terminal_is_gone, warn};
+use sim::Sim;
 
 const HELP: &str = "\
-omarchy-poincare -- three-body screensaver for Omarchy
+omarchy-screensaver-poincare -- three-body screensaver for Omarchy
 
 USAGE:
-    omarchy-poincare [OPTIONS]
+    omarchy-screensaver-poincare [OPTIONS]
 
 ORBIT
     -o, --orbit <key|random>   Which simulation to run (default: random)
@@ -70,7 +65,7 @@ OTHER
     -h, --help                 This help
 
 CONFIG
-    ~/.config/omarchy-poincare/config -- one option per line, # for comments.
+    ~/.config/omarchy-screensavers/config -- one option per line, # for comments.
     A value is the rest of its line, so `--text MY NAME` needs no quoting.
     Command-line options override it.
 ";
@@ -119,59 +114,6 @@ impl Default for Opts {
     }
 }
 
-/// Options read from ~/.config/omarchy-poincare/config, which is how the
-/// screensaver gets configured: the launcher passes no arguments of its own.
-///
-/// One option per line, `#` starts a comment, and an option's value is the rest
-/// of its line -- so `--text MY NAME` needs no quoting. Command-line arguments
-/// are appended after these and later options win, so a flag typed by hand
-/// overrides the file.
-fn config_args() -> Vec<String> {
-    let path = match std::env::var("OMARCHY_POINCARE_CONFIG") {
-        Ok(p) => std::path::PathBuf::from(p),
-        Err(_) => match std::env::var("HOME") {
-            Ok(h) => std::path::PathBuf::from(h).join(".config/omarchy-poincare/config"),
-            Err(_) => return Vec::new(),
-        },
-    };
-    match std::fs::read_to_string(&path) {
-        Ok(text) => parse_config(&text),
-        Err(_) => Vec::new(),
-    }
-}
-
-/// Splits config text into arguments. Separated from the file handling so it
-/// can be tested directly.
-fn parse_config(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in text.lines() {
-        // A '#' preceded by whitespace starts a trailing comment. Requiring the
-        // whitespace keeps '#' usable inside a value.
-        let line = match line
-            .char_indices()
-            .find(|&(i, c)| c == '#' && (i == 0 || line[..i].ends_with(char::is_whitespace)))
-        {
-            Some((i, _)) => &line[..i],
-            None => line,
-        };
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        match line.split_once(char::is_whitespace) {
-            Some((flag, value)) => {
-                out.push(flag.to_string());
-                let value = value.trim();
-                if !value.is_empty() {
-                    out.push(value.to_string());
-                }
-            }
-            None => out.push(line.to_string()),
-        }
-    }
-    out
-}
-
 /// What a parse asked us to do instead of running.
 enum Action {
     Run,
@@ -191,10 +133,10 @@ enum Action {
 fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
     let reject = |what: String| -> bool {
         if strict {
-            warn(format_args!("omarchy-poincare: {what}"));
+            warn(format_args!("omarchy-screensaver-poincare: {what}"));
             std::process::exit(2);
         }
-        warn(format_args!("omarchy-poincare: ignoring config: {what}"));
+        warn(format_args!("omarchy-screensaver-poincare: ignoring config: {what}"));
         false
     };
 
@@ -269,7 +211,7 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
                     };
                 }
             }
-            // Read by omarchy-launch-poincare-screensaver: the font size it
+            // Read by omarchy-launch-screensavers: the font size it
             // starts the terminal at, and which screensaver it runs at all.
             // Accepted and ignored here so one config file serves both.
             "--font-size" => {
@@ -334,7 +276,7 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
                 let other = other.to_string();
                 if strict {
                     warn(format_args!(
-                        "omarchy-poincare: unknown option: {other}\n\n{HELP}"
+                        "omarchy-screensaver-poincare: unknown option: {other}\n\n{HELP}"
                     ));
                     std::process::exit(2);
                 }
@@ -346,39 +288,9 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
     Action::Run
 }
 
-/// Writes a diagnostic line to stderr, ignoring any failure to deliver it.
-///
-/// `eprintln!` panics when the write fails, and with `panic = "abort"` that
-/// becomes a SIGABRT and a core dump. Our stderr is the terminal the
-/// screensaver draws in, and the lock screen tears that down without warning;
-/// writes to the dead pty then fail with EIO. A diagnostic we cannot deliver
-/// is not worth crashing over.
-fn warn(args: std::fmt::Arguments) {
-    let _ = writeln!(std::io::stderr(), "{args}");
-}
-
-/// `print!`/`println!` for a process whose stdout may already be gone.
-///
-/// Same hazard as [`warn`]: the standard macros panic when the write fails,
-/// and `panic = "abort"` turns that into a SIGABRT. These paths only run for
-/// `--help`, `--list`, `--verify` and `--show-palette`, but there is no reason
-/// for them to be the one way left to abort on a terminal that went away.
-macro_rules! say {
-    ($($arg:tt)*) => {{ let _ = write!(std::io::stdout(), $($arg)*); }};
-}
-macro_rules! sayln {
-    ($($arg:tt)*) => {{ let _ = writeln!(std::io::stdout(), $($arg)*); }};
-}
-
-/// True when a write failed because whatever we were drawing on has gone away.
-/// Closing a pty gives EIO; closing a pipe gives EPIPE.
-fn terminal_is_gone(e: &std::io::Error) -> bool {
-    e.kind() == std::io::ErrorKind::BrokenPipe || e.raw_os_error() == Some(libc::EIO)
-}
-
 fn main() {
     // Rust ignores SIGPIPE and turns the resulting EPIPE into a panic, so
-    // `omarchy-poincare --list | head` dies noisily. Restore the default and
+    // `omarchy-screensaver-poincare --list | head` dies noisily. Restore the default and
     // let the process end quietly the way every other CLI does.
     unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
 
@@ -412,7 +324,7 @@ fn main() {
         if terminal_is_gone(&e) {
             return;
         }
-        warn(format_args!("omarchy-poincare: {e}"));
+        warn(format_args!("omarchy-screensaver-poincare: {e}"));
         std::process::exit(1);
     }
 }
@@ -532,41 +444,8 @@ fn show_palette(spec: &str) {
     }
 }
 
-/// Restores the terminal however we leave the render loop.
-struct TermGuard {
-    raw: bool,
-}
-impl Drop for TermGuard {
-    fn drop(&mut self) {
-        let mut out = std::io::stdout();
-        // Show cursor, reset colours, leave the alternate screen.
-        let _ = out.write_all(b"\x1b[0m\x1b[?25h\x1b[?1049l");
-        let _ = out.flush();
-        if self.raw {
-            let _ = crossterm::terminal::disable_raw_mode();
-        }
-    }
-}
-
-enum Phase {
-    Sim,
-    Morph,
-    Hold,
-    Scatter,
-}
-
 fn run(o: Opts) -> std::io::Result<()> {
-    let source_art = match (&o.text, &o.file) {
-        (Some(t), _) => target::Art::from_text(t, o.text_scale),
-        (None, Some(f)) => target::load(std::path::Path::new(f))?,
-        (None, None) => target::load(&target::default_path())?,
-    };
-    if source_art.cells.is_empty() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "the morph target is empty -- nothing to assemble into",
-        ));
-    }
+    let art = StageArt::load(o.file.as_deref(), o.text.as_deref(), o.text_scale)?;
 
     let mut rng = Rng::from_clock();
     let chosen = match o.orbit.as_deref() {
@@ -579,143 +458,61 @@ fn run(o: Opts) -> std::io::Result<()> {
         })?),
     };
 
-    let raw = !o.managed && crossterm::terminal::enable_raw_mode().is_ok();
-    let _guard = TermGuard { raw };
-    let mut out = std::io::BufWriter::with_capacity(1 << 18, std::io::stdout());
-    // Alternate screen and hide the cursor. The background is set per cycle,
-    // from the theme.
-    out.write_all(b"\x1b[?1049h\x1b[?25l\x1b[2J")?;
-    out.flush()?;
+    let stage = StageOpts {
+        gather: o.sim,
+        morph: o.morph,
+        hold: o.hold,
+        scatter: o.scatter,
+        fps: o.fps,
+        once: o.once,
+        managed: o.managed,
+        stroke: o.stroke,
+        body: o.body,
+        theme: o.theme.clone(),
+        art_scale: o.art_scale,
+    };
 
-    let mut renderer = Renderer::new();
-    let (mut cols, mut rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    let mut canvas = Canvas::new(cols as usize, rows as usize);
+    stage::run_stage(&stage, &art, &mut rng, o.managed, |rng, canvas| {
+        // Grid mode tiles the library; the stage runs one gather phase per
+        // cycle, so combine the tiles into a single phase object.
+        let mut sims = build_sims(&o, chosen, rng, canvas);
+        let first = sims.remove(0);
+        MultiSim { first, rest: sims }
+    })
+}
 
-    let frame = Duration::from_secs_f64(1.0 / o.fps);
-    let mut cycles = 0usize;
+/// Several sims (grid mode) presented as one gather phase.
+struct MultiSim {
+    first: Sim,
+    rest: Vec<Sim>,
+}
 
-    'outer: loop {
-        // --- set up one cycle -------------------------------------------
-        // Re-read every cycle: `omarchy theme set` re-stages the theme
-        // directory, so this follows a theme change within one orbit.
-        // Block art is enlarged to suit the terminal: at a small font the
-        // logo would otherwise be a stamp in the middle of a much finer field.
-        let scale = o
-            .art_scale
-            .unwrap_or_else(|| source_art.fit_scale(canvas.cols, canvas.rows));
-        let art = source_art.scaled(scale);
-
-        let style = Style::auto(canvas.dots_h(), o.stroke, o.body);
-        let pal = Palette::load(&o.theme);
-        out.write_all(format!("\x1b]11;{}\x07", palette::hex(pal.background)).as_bytes())?;
-        renderer.invalidate();
-        let mut sims = build_sims(&o, chosen, &mut rng, &canvas);
-        let mut phase = Phase::Sim;
-        let mut morph: Option<Morph> = None;
-        let mut t0 = Instant::now();
-        // Per art cell: how far its best particle has got, and what colour it
-        // arrived wearing.
-        let mut arrival = vec![0.0f32; art.cells.len()];
-        let mut arrival_colour = vec![Palette::reference().logo_rest; art.cells.len()];
-
-        loop {
-            let started = Instant::now();
-
-            // --- input and resize ---------------------------------------
-            if raw {
-                while crossterm::event::poll(Duration::from_millis(0))? {
-                    use crossterm::event::Event;
-                    match crossterm::event::read()? {
-                        Event::Resize(w, h) => {
-                            cols = w;
-                            rows = h;
-                            canvas = Canvas::new(cols as usize, rows as usize);
-                            renderer.invalidate();
-                            continue 'outer;
-                        }
-                        Event::Key(_) | Event::Mouse(_) => break 'outer,
-                        _ => {}
-                    }
-                }
-            } else if let Ok((w, h)) = crossterm::terminal::size() {
-                if (w, h) != (cols, rows) {
-                    cols = w;
-                    rows = h;
-                    canvas = Canvas::new(cols as usize, rows as usize);
-                    renderer.invalidate();
-                    continue 'outer;
-                }
-            }
-
-            canvas.clear();
-            let t = t0.elapsed().as_secs_f64();
-
-            match phase {
-                Phase::Sim => {
-                    for s in sims.iter_mut() {
-                        s.advance();
-                        s.draw(&mut canvas, &pal, style);
-                    }
-                    if t >= o.sim {
-                        let mut src = Vec::new();
-                        for s in &sims {
-                            s.source_points(&mut src, &pal);
-                        }
-                        morph = Some(make_morph(&canvas, &art, src, &mut rng));
-                        arrival.iter_mut().for_each(|a| *a = 0.0);
-                        phase = Phase::Morph;
-                        t0 = Instant::now();
-                    }
-                }
-                Phase::Morph => {
-                    let m = morph.as_ref().unwrap();
-                    let p = (t / o.morph).min(1.0) as f32;
-                    draw_particles(&mut canvas, m, p, 1.0, &mut arrival, &mut arrival_colour, &pal, style);
-                    draw_art(&mut canvas, &art, &arrival, &arrival_colour, 0.0, &pal);
-                    if t >= o.morph {
-                        arrival.iter_mut().for_each(|a| *a = 1.0);
-                        phase = Phase::Hold;
-                        t0 = Instant::now();
-                    }
-                }
-                Phase::Hold => {
-                    // Settle from the colours the particles brought to a calm
-                    // single tone, so it ends looking like the logo.
-                    let settle = ((t / 1.4) as f32).clamp(0.0, 1.0);
-                    draw_art(&mut canvas, &art, &arrival, &arrival_colour, settle, &pal);
-                    if t >= o.hold {
-                        morph = Some(make_scatter(&canvas, &art, &mut rng, &pal));
-                        phase = Phase::Scatter;
-                        t0 = Instant::now();
-                    }
-                }
-                Phase::Scatter => {
-                    let m = morph.as_ref().unwrap();
-                    let p = (t / o.scatter).min(1.0) as f32;
-                    let mut ignore = vec![0.0f32; 0];
-                    let mut ignore_c = vec![];
-                    draw_particles(&mut canvas, m, p, 1.0 - p, &mut ignore, &mut ignore_c, &pal, style);
-                    if t >= o.scatter {
-                        cycles += 1;
-                        if o.once {
-                            break 'outer;
-                        }
-                        continue 'outer;
-                    }
-                }
-            }
-
-            renderer.draw(&canvas, &mut out)?;
-
-            let spent = started.elapsed();
-            if spent < frame {
-                std::thread::sleep(frame - spent);
-            }
+impl stage::GatherPhase for MultiSim {
+    fn advance(&mut self) {
+        self.first.advance();
+        for s in &mut self.rest {
+            s.advance();
         }
     }
 
-    let _ = cycles;
-    Ok(())
+    fn draw(
+        &self,
+        canvas: &mut Canvas,
+        pal: &Palette,
+        style: stage::Style,
+    ) {
+        self.first.draw(canvas, pal, style);
+        for s in &self.rest {
+            s.draw(canvas, pal, style);
+        }
+    }
+
+    fn source_points(&self, out: &mut Vec<(f64, f64, Rgb)>, pal: &Palette) {
+        self.first.source_points(out, pal);
+        for s in &self.rest {
+            s.source_points(out, pal);
+        }
+    }
 }
 
 fn build_sims(
@@ -769,176 +566,15 @@ fn build_sims(
         .collect()
 }
 
-/// Where an art cell sits on screen, in dot coordinates.
-fn art_origin(canvas: &Canvas, art: &target::Art) -> (f64, f64) {
-    let col = (canvas.cols as f64 - art.width as f64) * 0.5;
-    let row = (canvas.rows as f64 - art.height as f64) * 0.5;
-    (col.max(0.0).floor(), row.max(0.0).floor())
-}
-
-fn make_morph(
-    canvas: &Canvas,
-    art: &target::Art,
-    src: Vec<(f64, f64, Rgb)>,
-    rng: &mut Rng,
-) -> Morph {
-    let (ox, oy) = art_origin(canvas, art);
-    // Several particles per glyph, so the art assembles out of a cloud rather
-    // than a sparse dusting -- but capped, or a small logo would need tens of
-    // thousands of particles to consume the whole trail.
-    let per_cell = (src.len() / art.cells.len().max(1)).clamp(1, 5);
-    let mut targets = Vec::with_capacity(art.cells.len() * per_cell);
-    for (idx, &(col, row, _)) in art.cells.iter().enumerate() {
-        for _ in 0..per_cell {
-            let x = (ox + col as f64) * 2.0 + rng.range(0.0, 2.0);
-            let y = (oy + row as f64) * 4.0 + rng.range(0.0, 4.0);
-            targets.push((x, y, idx));
-        }
-    }
-    Morph::new(canvas.dots_w() as f64 * 0.5, canvas.dots_h() as f64 * 0.5, src, targets, rng)
-}
-
-fn make_scatter(canvas: &Canvas, art: &target::Art, rng: &mut Rng, pal: &Palette) -> Morph {
-    let (ox, oy) = art_origin(canvas, art);
-    let (dw, dh) = (canvas.dots_w() as f64, canvas.dots_h() as f64);
-    let radius = (dw * dw + dh * dh).sqrt() * 0.7;
-    let mut src = Vec::with_capacity(art.cells.len() * 3);
-    let mut targets = Vec::with_capacity(art.cells.len() * 3);
-    for &(col, row, _) in &art.cells {
-        for _ in 0..3 {
-            src.push((
-                (ox + col as f64) * 2.0 + rng.range(0.0, 2.0),
-                (oy + row as f64) * 4.0 + rng.range(0.0, 4.0),
-                pal.logo_rest,
-            ));
-            let th = rng.range(0.0, std::f64::consts::TAU);
-            targets.push((
-                dw * 0.5 + radius * th.cos(),
-                dh * 0.5 + radius * th.sin(),
-                usize::MAX,
-            ));
-        }
-    }
-    Morph::new(dw * 0.5, dh * 0.5, src, targets, rng)
-}
-
-fn draw_particles(
-    canvas: &mut Canvas,
-    m: &Morph,
-    p: f32,
-    brightness: f32,
-    arrival: &mut [f32],
-    arrival_colour: &mut [Rgb],
-    pal: &Palette,
-    style: Style,
-) {
-    // Particles are the trail broken up, so they carry the same weight.
-    let brush = Canvas::disc((style.stroke - 1).max(0));
-    for particle in &m.particles {
-        let (x, y, local) = m.at(particle, p);
-        if particle.cell < arrival.len() {
-            if local > arrival[particle.cell] {
-                arrival[particle.cell] = local;
-                arrival_colour[particle.cell] = particle.colour;
-            }
-            // Once its glyph is showing, the particle has done its job.
-            if local >= 0.995 {
-                continue;
-            }
-        }
-        // Brighten on approach: the cloud arrives hot, then the glyphs take
-        // over and cool to the resting colour.
-        let b = brightness * (0.45 + 0.55 * local);
-        let (px, py) = (x.round() as i32, y.round() as i32);
-        let colour = palette::mix(pal.background, particle.colour, b);
-        for &(bx, by) in &brush {
-            canvas.dot(px + bx, py + by, colour, 0.6 + local);
-        }
-    }
-}
-
-fn draw_art(
-    canvas: &mut Canvas,
-    art: &target::Art,
-    arrival: &[f32],
-    arrival_colour: &[Rgb],
-    settle: f32,
-    pal: &Palette,
-) {
-    let (ox, oy) = art_origin(canvas, art);
-    for (idx, &(col, row, ch)) in art.cells.iter().enumerate() {
-        let a = arrival[idx];
-        if a < 0.995 {
-            continue;
-        }
-        let colour = palette::mix(arrival_colour[idx], pal.logo_rest, settle);
-        canvas.glyph(ox as usize + col, oy as usize + row, ch, colour);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Losing the terminal is how the screensaver normally ends -- the lock
-    /// screen takes the window away mid-draw -- so it must not be mistaken
-    /// for a failure worth reporting. Reporting it is what used to abort.
-    #[test]
-    fn a_dead_terminal_is_recognised_as_a_normal_shutdown() {
-        let eio = std::io::Error::from_raw_os_error(libc::EIO);
-        assert!(terminal_is_gone(&eio), "a closed pty gives EIO");
-
-        let epipe = std::io::Error::from_raw_os_error(libc::EPIPE);
-        assert!(terminal_is_gone(&epipe), "a closed pipe gives EPIPE");
-    }
-
-    /// The risk in the fix above is swallowing genuine errors along with the
-    /// dead terminal, leaving the screensaver failing silently.
-    #[test]
-    fn other_errors_are_not_mistaken_for_a_dead_terminal() {
-        let empty = std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "the morph target is empty -- nothing to assemble into",
-        );
-        assert!(!terminal_is_gone(&empty));
-
-        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
-        assert!(!terminal_is_gone(&missing));
-
-        let denied = std::io::Error::from_raw_os_error(libc::EACCES);
-        assert!(!terminal_is_gone(&denied));
-    }
 
     fn parse(args: &[&str]) -> Opts {
         let mut o = Opts::default();
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         apply(&mut o, &owned, false);
         o
-    }
-
-    #[test]
-    fn a_value_is_the_rest_of_the_line_so_text_needs_no_quoting() {
-        assert_eq!(parse_config("--text MY NAME\n"), ["--text", "MY NAME"]);
-    }
-
-    /// This one bit in practice: `--sim 10   # seconds` parsed the comment as
-    /// part of the value.
-    #[test]
-    fn a_trailing_comment_is_stripped() {
-        assert_eq!(parse_config("--sim 10   # seconds of orbit\n"), ["--sim", "10"]);
-        assert_eq!(parse_config("--once  # just one\n"), ["--once"]);
-    }
-
-    /// ...but only when the # is preceded by whitespace, so it stays usable
-    /// inside a value.
-    #[test]
-    fn a_hash_inside_a_value_survives() {
-        assert_eq!(parse_config("--text A#B\n"), ["--text", "A#B"]);
-    }
-
-    #[test]
-    fn blank_lines_and_whole_line_comments_are_ignored() {
-        assert!(parse_config("\n   \n# a comment\n\t# another\n").is_empty());
     }
 
     #[test]

@@ -1,0 +1,18 @@
+[package]
+name = "omarchy-screensaver-starry"
+version = "0.1.0"
+edition = "2021"
+description = "Starry-night screensaver for Omarchy: stars gather into your branding"
+license = "MIT"
+
+[[bin]]
+name = "omarchy-screensaver-starry"
+path = "src/main.rs"
+
+[dependencies]
+omarchy-screensaver-core = { path = "../core" }
+libc.workspace = true
+
+[dev-dependencies]
+# The teardown test needs a pty it can destroy under a running screensaver.
+libc.workspace = true

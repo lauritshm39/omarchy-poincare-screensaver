@@ -50,7 +50,7 @@ fn destroying_the_terminal_mid_draw_is_a_quiet_exit() {
     let (master, slave) = open_pty();
 
     let stdio = || unsafe { Stdio::from_raw_fd(libc::dup(slave)) };
-    let mut child = Command::new(env!("CARGO_BIN_EXE_omarchy-poincare"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_omarchy-screensaver-poincare"))
         .args(["--managed", "--text", "HI"])
         .stdin(stdio())
         .stdout(stdio())
@@ -109,7 +109,7 @@ fn destroying_the_terminal_mid_draw_is_a_quiet_exit() {
 fn a_real_error_is_still_reported() {
     // The risk in treating a dead terminal as a clean exit is swallowing
     // genuine failures along with it.
-    let out = Command::new(env!("CARGO_BIN_EXE_omarchy-poincare"))
+    let out = Command::new(env!("CARGO_BIN_EXE_omarchy-screensaver-poincare"))
         .args(["--orbit", "definitely-not-an-orbit"])
         .output()
         .expect("failed to spawn the screensaver");

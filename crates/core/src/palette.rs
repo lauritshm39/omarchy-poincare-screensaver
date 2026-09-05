@@ -65,7 +65,7 @@ impl Palette {
                 .unwrap_or_else(Palette::reference),
             path => Palette::from_theme(Path::new(path)).unwrap_or_else(|| {
                 crate::warn(format_args!(
-                    "omarchy-poincare: no colours in {path:?}; using the built-in palette"
+                    "omarchy-screensavers: no colours in {path:?}; using the built-in palette"
                 ));
                 Palette::reference()
             }),

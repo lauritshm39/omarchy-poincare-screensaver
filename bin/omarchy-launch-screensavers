@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# The screensaver entry point installed by omarchy-poincare-screensaver, and
-# what Omarchy's idle timer is pointed at.
+# The screensaver entry point installed by omarchy-screensavers, and what
+# Omarchy's idle timer is pointed at.
 #
-# Despite the name it is a chooser: `--screensaver` in the config file decides
-# whether it draws the three-body simulation, hands off to Omarchy's stock
+# A chooser: `--screensaver` in the config file decides whether it draws the
+# three-body simulation, the starry night, hands off to Omarchy's stock
 # screensaver, or picks one of them at random each time. Omarchy itself has no
 # notion of more than one screensaver, so the choosing has to happen here.
 #
@@ -13,10 +13,15 @@
 # org.omarchy.screensaver app id and the stock per-terminal screensaver configs
 # so the window rules, fonts and padding are identical.
 #
-# Usage: omarchy-launch-poincare-screensaver [poincare|omarchy|random] [force]
+# Usage: omarchy-launch-screensavers [poincare|starry|omarchy|random] [force]
 
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
-CONFIG="${OMARCHY_POINCARE_CONFIG:-$HOME/.config/omarchy-poincare/config}"
+# The new canonical path first, then the legacy poincare one, then the env
+# overrides -- mirroring crates/core/src/config.rs.
+CONFIG="$HOME/.config/omarchy-screensavers/config"
+[[ -f $CONFIG ]] || CONFIG="$HOME/.config/omarchy-poincare/config"
+[[ -n ${OMARCHY_SCREENSAVERS_CONFIG:-} ]] && CONFIG="$OMARCHY_SCREENSAVERS_CONFIG"
+[[ -n ${OMARCHY_POINCARE_CONFIG:-} ]] && CONFIG="$OMARCHY_POINCARE_CONFIG"
 
 # Reads the last value of a setting from the config file, ignoring comments.
 config_value() {
@@ -30,14 +35,14 @@ FORCE=""
 
 for arg in "$@"; do
   case $arg in
-  poincare | omarchy | random) MODE=$arg ;;
+  poincare | starry | omarchy | random) MODE=$arg ;;
   force) FORCE=force ;;
   esac
 done
 
 if [[ $MODE == random ]]; then
-  # One coin flip per launch, so an idle machine alternates between them.
-  POOL=(poincare omarchy)
+  # One roll per launch, so an idle machine cycles through the collection.
+  POOL=(poincare starry omarchy)
   MODE=${POOL[RANDOM % ${#POOL[@]}]}
 fi
 
@@ -45,8 +50,19 @@ if [[ $MODE == omarchy ]]; then
   exec omarchy-launch-screensaver $FORCE
 fi
 
-if ! command -v omarchy-poincare >/dev/null; then
-  echo "omarchy-poincare is not on PATH; run install.sh" >&2
+# Map the mode to the binary. starry is a stub until feature/starry-gather
+# lands; fall back to poincare with a warning rather than a black screen.
+case $MODE in
+poincare) BIN=omarchy-screensaver-poincare ;;
+starry) BIN=omarchy-screensaver-starry ;;
+*)
+  echo "omarchy-launch-screensavers: unknown screensaver $MODE" >&2
+  exit 1
+  ;;
+esac
+
+if ! command -v "$BIN" >/dev/null; then
+  echo "$BIN is not on PATH; run install.sh" >&2
   exit 1
 fi
 
@@ -123,16 +139,16 @@ for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
 
   case $terminal in
   *Alacritty*)
-    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -o "font.size=$FONT_SIZE" -e omarchy-poincare-screensaver
+    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -o "font.size=$FONT_SIZE" -e omarchy-screensaver-run "$BIN"
     ;;
   *ghostty*)
-    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size="$FONT_SIZE" -e omarchy-poincare-screensaver
+    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size="$FONT_SIZE" -e omarchy-screensaver-run "$BIN"
     ;;
   *foot*)
-    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" --font="JetBrainsMono Nerd Font:size=$FONT_SIZE" -e omarchy-poincare-screensaver
+    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" --font="JetBrainsMono Nerd Font:size=$FONT_SIZE" -e omarchy-screensaver-run "$BIN"
     ;;
   *kitty*)
-    hypr_exec kitty --class=org.omarchy.screensaver --override "font_size=$FONT_SIZE" --override window_padding_width=0 -e omarchy-poincare-screensaver
+    hypr_exec kitty --class=org.omarchy.screensaver --override "font_size=$FONT_SIZE" --override window_padding_width=0 -e omarchy-screensaver-run "$BIN"
     ;;
   esac
 

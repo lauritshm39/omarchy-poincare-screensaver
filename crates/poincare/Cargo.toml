@@ -1,0 +1,18 @@
+[package]
+name = "omarchy-screensaver-poincare"
+version = "0.1.0"
+edition = "2021"
+description = "Three-body screensaver for Omarchy: periodic orbits that morph into your branding"
+license = "MIT"
+
+[[bin]]
+name = "omarchy-screensaver-poincare"
+path = "src/main.rs"
+
+[dependencies]
+omarchy-screensaver-core = { path = "../core" }
+libc.workspace = true
+
+[dev-dependencies]
+# The teardown test needs a pty it can destroy under a running screensaver.
+libc.workspace = true

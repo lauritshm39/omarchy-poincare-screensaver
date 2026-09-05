@@ -7,7 +7,7 @@ solution and depends sensitively on its initial conditions. What does exist is a
 catalogue of isolated *periodic* orbits, and that catalogue is what makes a
 screensaver out of it possible.
 
-18 orbits. `omarchy-poincare --list` prints them; `--orbit <key>` picks one.
+18 orbits. `omarchy-screensaver-poincare --list` prints them; `--orbit <key>` picks one.
 
 | family | orbits |
 |---|---|

@@ -1,0 +1,14 @@
+[package]
+name = "omarchy-screensaver-core"
+version = "0.1.0"
+edition = "2021"
+description = "Shared terminal rendering, morph, palette and stage machinery for the Omarchy screensavers"
+license = "MIT"
+
+[lib]
+name = "omarchy_screensaver_core"
+path = "src/lib.rs"
+
+[dependencies]
+crossterm.workspace = true
+libc.workspace = true

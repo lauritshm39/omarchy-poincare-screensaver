@@ -1,21 +1,11 @@
-[package]
-name = "omarchy-poincare"
-version = "0.1.0"
-edition = "2021"
-description = "Three-body screensaver for Omarchy: periodic Poincare/Newtonian orbits that morph into your branding"
-license = "MIT"
+[workspace]
+resolver = "2"
+members = ["crates/*"]
 
-[[bin]]
-name = "omarchy-poincare"
-path = "src/main.rs"
-
-[dependencies]
+[workspace.dependencies]
 crossterm = "0.28"
-# Already in the tree via crossterm; used only to restore the default SIGPIPE.
-libc = "0.2"
-
-[dev-dependencies]
-# The teardown test needs a pty it can destroy under a running screensaver.
+# Already in the tree via crossterm; used for SIGPIPE handling and for
+# recognising a dead terminal (EIO/EPIPE).
 libc = "0.2"
 
 [profile.release]

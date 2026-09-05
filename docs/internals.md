@@ -6,14 +6,10 @@ The cycle is orbit → collapse → hold → scatter → next orbit.
 
 | module | |
 |---|---|
-| `physics.rs` | the three-body system and the integrator |
-| `orbits.rs` | the library, and the profiler that measures each orbit |
-| `sim.rs` | running one orbit and turning it into dots |
-| `canvas.rs` | braille sub-cell canvas and the diffing renderer |
-| `morph.rs` | pairing trail dots with glyph cells |
-| `target.rs` | the morph target: art parsing, scaling, the block font |
-| `palette.rs` | theme colours |
-| `main.rs` | options, config file, the phase machine |
+| `crates/poincare/{physics,orbits,sim}.rs` | the three-body system, the orbit library, the orbit runner |
+| `crates/core/{canvas,morph,target,palette,rng}.rs` | shared braille canvas, morph, art, colours, PRNG |
+| `crates/core/stage.rs` | the shared gather → morph → hold → scatter phase machine |
+| `crates/core/config.rs` | the shared config file |
 
 ## Tests
 

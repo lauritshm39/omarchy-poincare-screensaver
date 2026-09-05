@@ -89,11 +89,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "omarchy-poincare"
+name = "omarchy-screensaver-core"
 version = "0.1.0"
 dependencies = [
  "crossterm",
  "libc",
+]
+
+[[package]]
+name = "omarchy-screensaver-poincare"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omarchy-screensaver-core",
+]
+
+[[package]]
+name = "omarchy-screensaver-starry"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omarchy-screensaver-core",
 ]
 
 [[package]]

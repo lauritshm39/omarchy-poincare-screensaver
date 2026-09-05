@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Installs the Poincare three-body screensaver into ~/.local/bin.
+# Installs the omarchy-screensavers collection into ~/.local/bin.
 #
 # Nothing under /usr/share/omarchy is touched: that directory belongs to the
-# omarchy package and is replaced on every update. The screensaver reuses
+# omarchy package and is replaced on every update. The screensavers reuse
 # Omarchy's own window class and terminal configs by reading them, not by
 # modifying anything.
 
@@ -17,8 +17,8 @@ usage() {
   cat <<USAGE
 Usage: ./install.sh [--idle] [--remove-idle]
 
-  (no flags)      Build and install the binary and launcher into $BIN_DIR.
-  --idle          Additionally point Omarchy's idle timer at this screensaver
+  (no flags)      Build and install the binaries and launchers into $BIN_DIR.
+  --idle          Additionally point Omarchy's idle timer at these screensavers
                   instead of the stock one. Does this the supported way: clones
                   the built-in omarchy.idle shell plugin into your own config
                   and edits the clone, so an omarchy update cannot undo it and
@@ -71,10 +71,31 @@ echo "Building..."
 cargo build --release --manifest-path "$here/Cargo.toml"
 
 mkdir -p "$BIN_DIR"
-install -m755 "$here/target/release/omarchy-poincare" "$BIN_DIR/omarchy-poincare"
-install -m755 "$here/bin/omarchy-poincare-screensaver" "$BIN_DIR/omarchy-poincare-screensaver"
-install -m755 "$here/bin/omarchy-launch-poincare-screensaver" "$BIN_DIR/omarchy-launch-poincare-screensaver"
-echo "Installed into $BIN_DIR."
+install -m755 "$here/target/release/omarchy-screensaver-poincare" "$BIN_DIR/omarchy-screensaver-poincare"
+install -m755 "$here/target/release/omarchy-screensaver-starry" "$BIN_DIR/omarchy-screensaver-starry"
+install -m755 "$here/bin/omarchy-screensaver-run" "$BIN_DIR/omarchy-screensaver-run"
+install -m755 "$here/bin/omarchy-launch-screensavers" "$BIN_DIR/omarchy-launch-screensavers"
+
+# Backwards compatibility with the single-screensaver layout: the old names
+# stay as thin shims for one release so existing keybindings, the existing
+# idle hook (Service.qml) and the old config path keep working. New installs
+# should use the names above.
+cat >"$BIN_DIR/omarchy-launch-poincare-screensaver" <<'SHIM'
+#!/bin/bash
+# Deprecated shim: use omarchy-launch-screensavers instead.
+exec omarchy-launch-screensavers poincare "$@"
+SHIM
+chmod 755 "$BIN_DIR/omarchy-launch-poincare-screensaver"
+cat >"$BIN_DIR/omarchy-poincare-screensaver" <<'SHIM'
+#!/bin/bash
+# Deprecated shim: use omarchy-screensaver-run instead.
+exec omarchy-screensaver-run omarchy-screensaver-poincare "$@"
+SHIM
+chmod 755 "$BIN_DIR/omarchy-poincare-screensaver"
+if [[ ! -e "$BIN_DIR/omarchy-poincare" ]]; then
+  ln -s omarchy-screensaver-poincare "$BIN_DIR/omarchy-poincare"
+fi
+echo "Installed into $BIN_DIR (old poincare names kept as shims)."
 
 case ":$PATH:" in
 *":$BIN_DIR:"*) ;;
@@ -94,34 +115,38 @@ if ((IDLE_HOOK)); then
     echo "Expected $service after cloning; aborting." >&2
     exit 1
   }
-  if grep -q 'omarchy-launch-poincare-screensaver' "$service"; then
-    echo "Idle service already points at the Poincare screensaver."
+  if grep -q 'omarchy-launch-screensavers' "$service"; then
+    echo "Idle service already points at the screensavers launcher."
   else
-    grep -q 'omarchy-launch-screensaver' "$service" || {
+    if grep -q 'omarchy-launch-poincare-screensaver' "$service"; then
+      sed -i 's/omarchy-launch-poincare-screensaver/omarchy-launch-screensavers/g' "$service"
+    elif grep -q 'omarchy-launch-screensaver' "$service"; then
+      sed -i 's/omarchy-launch-screensaver/omarchy-launch-screensavers/g' "$service"
+    else
       echo "Could not find the launcher call in $service; Omarchy may have changed." >&2
-      echo "Point it at omarchy-launch-poincare-screensaver by hand." >&2
+      echo "Point it at omarchy-launch-screensavers by hand." >&2
       exit 1
-    }
-    sed -i 's/omarchy-launch-screensaver/omarchy-launch-poincare-screensaver/g' "$service"
+    fi
     omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
-    echo "Idle service now launches the Poincare screensaver."
+    echo "Idle service now launches the screensavers collection."
   fi
 fi
 
 cat <<DONE
 
 Try it now (a whole cycle in a few seconds, in this terminal):
-    omarchy-poincare --sim 3 --once
+    omarchy-screensaver-poincare --sim 3 --once
 
 Or as Omarchy launches it (the logo arrives after the 10s orbit phase):
-    omarchy-launch-poincare-screensaver
-    omarchy-poincare --list                 # the orbit library
-    omarchy-poincare --verify               # check every orbit really is periodic
-    omarchy-poincare --layout grid          # the whole library at once
+    omarchy-launch-screensavers
+    omarchy-screensaver-poincare --list      # the orbit library
+    omarchy-screensaver-poincare --verify    # check every orbit really is periodic
+    omarchy-screensaver-poincare --layout grid  # the whole library at once
 
-Settings live in ~/.config/omarchy-poincare/config
-(timings, orbit, colours, resolution, stroke weight -- see docs/configuration.md).
+Settings live in ~/.config/omarchy-screensavers/config
+(old ~/.config/omarchy-poincare/config still works as a fallback;
+timings, orbit, colours, resolution, stroke weight -- see docs/configuration.md).
 
 Bind a key (in ~/.config/hypr/bindings.lua):
-    o.bind("SUPER SHIFT", "S", "Screensaver", "omarchy-launch-poincare-screensaver")
+    o.bind("SUPER SHIFT", "S", "Screensaver", "omarchy-launch-screensavers")
 DONE

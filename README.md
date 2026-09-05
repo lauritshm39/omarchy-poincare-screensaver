@@ -1,8 +1,12 @@
-# omarchy-poincare-screensaver
+# omarchy-screensavers
 
-A screensaver for [Omarchy](https://omarchy.org): a periodic solution of the
-Newtonian three-body problem traced out in the terminal, which then collapses
-into the Omarchy logo — or any name you like.
+A collection of screensavers for [Omarchy](https://omarchy.org), sharing one
+terminal renderer, one morph engine and one launcher.
+
+- **poincare**: a periodic solution of the Newtonian three-body problem
+  traced out in the terminal, which then collapses into the Omarchy logo —
+  or any name you like.
+- **starry** (coming soon): a twinkling starfield that gathers into the logo.
 
 In 1890 Poincaré showed the three-body problem has no general closed-form
 solution and depends sensitively on its initial conditions. What does exist is a
@@ -27,7 +31,7 @@ Needs a Rust toolchain (`pacman -S rust`, or `mise use -g rust@stable`).
 Then bind a key in `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("SUPER SHIFT", "S", "Screensaver", "omarchy-launch-poincare-screensaver")
+o.bind("SUPER SHIFT", "S", "Screensaver", "omarchy-launch-screensavers")
 ```
 
 ### Hooking the idle timer
@@ -42,7 +46,7 @@ the clone, which is what `--idle` does:
 
 ```bash
 omarchy plugin clone omarchy.idle
-sed -i 's/omarchy-launch-screensaver/omarchy-launch-poincare-screensaver/' \
+sed -i 's/omarchy-launch-screensaver/omarchy-launch-screensavers/' \
   ~/.config/omarchy/plugins/$USER.idle/Service.qml
 ```
 
@@ -52,16 +56,16 @@ Nothing system-owned is touched.
 ## Use
 
 ```bash
-omarchy-poincare --sim 3 --once        # a whole cycle in a few seconds
-omarchy-poincare --orbit figure-eight  # a specific simulation
-omarchy-poincare --layout grid         # every orbit at once
-omarchy-poincare --text "LAURITS"      # morph into a name instead
-omarchy-poincare --list                # the orbit library
-omarchy-poincare --palette             # colours resolved from your theme
-omarchy-poincare --verify              # check every orbit really is periodic
+omarchy-screensaver-poincare --sim 3 --once        # a whole cycle in a few seconds
+omarchy-screensaver-poincare --orbit figure-eight  # a specific simulation
+omarchy-screensaver-poincare --layout grid         # every orbit at once
+omarchy-screensaver-poincare --text "LAURITS"      # morph into a name instead
+omarchy-screensaver-poincare --list                # the orbit library
+omarchy-screensaver-poincare --palette             # colours resolved from your theme
+omarchy-screensaver-poincare --verify              # check every orbit really is periodic
 ```
 
-Settings live in `~/.config/omarchy-poincare/config`, since the launcher passes
+Settings live in `~/.config/omarchy-screensavers/config`, since the launcher passes
 no arguments of its own — see **[Configuration](docs/configuration.md)**.
 
 The cycle is orbit (10s) → collapse into the logo (2.6s) → hold (5s) →
@@ -73,7 +77,7 @@ scatter (1.6s) → next random orbit.
 cargo test --release    # 72 tests, about a second
 ```
 
-`omarchy-poincare --verify` is the other check worth running: it re-measures
+`omarchy-screensaver-poincare --verify` is the other check worth running: it re-measures
 every orbit and exits non-zero if the catalogue disagrees with the physics.
 See [Internals](docs/internals.md#tests).
 
