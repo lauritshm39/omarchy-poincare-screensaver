@@ -62,6 +62,11 @@ pub struct StageOpts {
     pub body: Option<f64>,
     pub theme: String,
     pub art_scale: Option<usize>,
+    /// Paint the black-hole backdrop behind morph/hold/scatter. Starry-only:
+    /// poincare leaves this false and its cycle is untouched.
+    pub black_hole: bool,
+    /// Black-hole radius as a fraction of the smaller canvas dimension.
+    pub hole_size: f64,
 }
 
 pub struct StageArt {
@@ -186,6 +191,9 @@ where
                 Phase::Morph => {
                     let m = morph.as_ref().unwrap();
                     let p = (t / o.morph).min(1.0) as f32;
+                    if o.black_hole {
+                        draw_black_hole(&mut canvas, &scaled, &pal, style, o.hole_size);
+                    }
                     draw_particles(&mut canvas, m, p, 1.0, &mut arrival, &mut arrival_colour, &pal, style);
                     draw_art(&mut canvas, &scaled, &arrival, &arrival_colour, 0.0, &pal);
                     if t >= o.morph {
@@ -198,6 +206,9 @@ where
                     // Settle from the colours the particles brought to a calm
                     // single tone, so it ends looking like the logo.
                     let settle = ((t / 1.4) as f32).clamp(0.0, 1.0);
+                    if o.black_hole {
+                        draw_black_hole(&mut canvas, &scaled, &pal, style, o.hole_size);
+                    }
                     draw_art(&mut canvas, &scaled, &arrival, &arrival_colour, settle, &pal);
                     if t >= o.hold {
                         morph = Some(make_scatter(&canvas, &scaled, rng, &pal));
@@ -268,6 +279,103 @@ pub fn glow(c: &mut Canvas, x: f64, y: f64, col: &palette::BodyColour, bg: Rgb, 
                 // Weighted well above the trail so a body crossing its own tail
                 // still reads as the bright thing in that cell.
                 2.0 + t * 10.0,
+            );
+        }
+    }
+}
+
+/// A black disc ringed by a glowing accretion ring, centred on the art.
+///
+/// The art is drawn after this, so the branding reads as sitting over the
+/// hole. The ring wears the theme's first body colour; the disc is the theme
+/// background pushed toward black, so the hole reads as a hole on light
+/// themes too. `size_frac` is the hole radius as a fraction of the smaller
+/// canvas dimension.
+pub fn draw_black_hole(
+    canvas: &mut Canvas,
+    art: &target::Art,
+    pal: &Palette,
+    style: Style,
+    size_frac: f64,
+) {
+    let (dw, dh) = (canvas.dots_w() as f64, canvas.dots_h() as f64);
+    let (ox, oy) = art_origin(canvas, art);
+    // Centre on the art, which is where the eye already is.
+    let (cx, cy) = (
+        (ox + art.width as f64 * 0.5) * 2.0,
+        (oy + art.height as f64 * 0.5) * 4.0,
+    );
+    let frac = size_frac.clamp(0.05, 0.8);
+    // Braille dots are near-square, but terminal cells are ~2x taller than
+    // wide: a circle in dot space renders as a tall ellipse on screen. Halve
+    // the y radius to compensate, so the hole reads as round.
+    let hole_rx = dw.min(dh) * frac;
+    let hole_ry = hole_rx * 0.5;
+    let ring_w = (hole_rx * 0.16).clamp(2.0, 8.0);
+    let ring_rx = hole_rx + ring_w;
+    let ring_ry = hole_ry + ring_w * 0.5;
+    let glow_r = style.body.max(2) as f64;
+
+    // Ellipse-normalised distance: 1.0 is the ring's outer edge.
+    let norm = |x: f64, y: f64| {
+        let ex = (x - cx) / ring_rx.max(1.0);
+        let ey = (y - cy) / ring_ry.max(1.0);
+        (ex * ex + ey * ey).sqrt()
+    };
+    let hole_edge = hole_rx / ring_rx;
+
+    let x0 = (cx - ring_rx - glow_r).max(0.0) as i32;
+    let x1 = (cx + ring_rx + glow_r).min(dw) as i32;
+    let y0 = (cy - ring_ry - glow_r).max(0.0) as i32;
+    let y1 = (cy + ring_ry + glow_r).min(dh) as i32;
+
+    let ring_col = pal.bodies[0].trail;
+    let ring_core = pal.bodies[0].core;
+    let hole_col = palette::mix(pal.background, [0.0, 0.0, 0.0], 0.85);
+
+    for y in y0..=y1 {
+        for x in x0..=x1 {
+            let d = norm(x as f64, y as f64);
+            if d <= hole_edge {
+                // The hole itself: flat dark, punched over whatever is there.
+                canvas.dot(x, y, hole_col, 20.0);
+            } else if d <= 1.0 {
+                // Accretion ring: hot inner edge cooling outward.
+                let t = 1.0 - (d - hole_edge) / (1.0 - hole_edge).max(1e-6);
+                let col = palette::mix(ring_col, ring_core, (t * t) as f32);
+                canvas.dot(
+                    x,
+                    y,
+                    palette::mix(pal.background, col, (0.35 + 0.65 * t) as f32),
+                    3.0 + 8.0 * t as f32,
+                );
+            } else if d <= 1.0 + glow_r / ring_rx.max(1.0) {
+                // Soft halo falling off around the ring.
+                let t = 1.0 - (d - 1.0) / (glow_r / ring_rx.max(1.0)).max(1e-6);
+                if t > 0.15 {
+                    canvas.dot(
+                        x,
+                        y,
+                        palette::mix(pal.background, ring_col, (0.5 * t) as f32),
+                        0.5 + t as f32,
+                    );
+                }
+            }
+        }
+    }
+    // Lensing arcs: two short bright arcs top and bottom, Einstein-ring style.
+    let arc_col = palette::mix(pal.background, pal.logo_rest, 0.8);
+    for (arc_cy, flip) in [(cy - hole_ry - ring_w * 0.25, 1.0), (cy + hole_ry + ring_w * 0.25, -1.0)] {
+        let span = hole_rx * 0.9;
+        let steps = (span * 2.0) as i32;
+        for i in 0..=steps {
+            let a = (i as f64 - span) / hole_rx.max(1.0);
+            let bend = (1.0 - a * a).max(0.0) * ring_w * 0.4 * flip;
+            canvas.dot(
+                (cx + a * hole_rx * 0.9).round() as i32,
+                (arc_cy + bend).round() as i32,
+                arc_col,
+                1.5,
             );
         }
     }

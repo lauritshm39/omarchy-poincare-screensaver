@@ -1,9 +1,12 @@
-//! A twinkling starfield that doubles as gather-phase sources.
+//! A twinkling starfield with a hyperdrive warp, doubling as gather-phase
+//! sources.
 //!
-//! Stars drift slowly on two or three parallax layers, each twinkling at its
-//! own rate and phase. When the stage collects [`Starfield::source_points`],
-//! the current star positions become the morph sources, so the night sky
-//! gathers into the branding art through the shared [`Morph`][crate::morph::Morph].
+//! Stars stream radially outward from the screen centre, accelerating as they
+//! go, each drawn with a motion streak and a per-layer disc size. Twinkle
+//! survives underneath. When the stage collects [`Starfield::source_points`],
+//! the current star positions become the morph sources, so the warp collapses
+//! into the branding art -- revealed over a black hole -- through the shared
+//! [`Morph`][crate::morph::Morph].
 
 use omarchy_screensaver_core::canvas::{Canvas, Rgb};
 use omarchy_screensaver_core::palette::{self, Palette};
@@ -14,7 +17,10 @@ use omarchy_screensaver_core::stage::{GatherPhase, Style};
 struct Star {
     x: f64,
     y: f64,
-    /// Parallax layer: 0 is far (slow, dim), 2 is near (faster, brighter).
+    /// Previous position, for the motion streak.
+    px: f64,
+    py: f64,
+    /// Parallax layer: 0 is far (slow, small), 2 is near (fast, big).
     layer: usize,
     /// Base brightness before twinkling, in (0, 1].
     base: f32,
@@ -36,10 +42,40 @@ struct Meteor {
     max_life: f64,
 }
 
+/// Tuning for the starfield. All three are configurable; see `--help`.
+#[derive(Clone, Copy)]
+pub struct StarCfg {
+    /// Star disc multiplier. Layer radii (0/0.9/1.6 dots) scale with this.
+    pub size: f64,
+    /// Base outward speed multiplier.
+    pub speed: f64,
+    /// Hyperdrive gain: extra outward speed per dot of distance from centre.
+    /// 0 is a calm drifting sky; ~1 is full warp.
+    pub warp: f64,
+}
+
+impl Default for StarCfg {
+    fn default() -> Self {
+        StarCfg { size: 1.2, speed: 2.0, warp: 1.0 }
+    }
+}
+
+/// Disc radius for a layer at a size multiplier. Far stars stay single dots;
+/// mid and near stars stamp small discs.
+fn star_radius(layer: usize, size: f64) -> i32 {
+    let base = match layer {
+        0 => 0.0,
+        1 => 0.9,
+        _ => 1.6,
+    };
+    ((base * size).round() as i32).clamp(0, 3)
+}
+
 pub struct Starfield {
     stars: Vec<Star>,
     dw: f64,
     dh: f64,
+    cfg: StarCfg,
     /// Seconds since creation, advanced once per frame.
     age: f64,
     dt: f64,
@@ -51,14 +87,24 @@ pub struct Starfield {
 impl Starfield {
     /// `count` overrides the area-scaled default. `fps` sets the per-frame
     /// time step driving drift and twinkle.
-    pub fn new(dw: f64, dh: f64, rng: &mut Rng, count: Option<usize>, fps: f64) -> Starfield {
+    pub fn new(
+        dw: f64,
+        dh: f64,
+        rng: &mut Rng,
+        count: Option<usize>,
+        fps: f64,
+        cfg: StarCfg,
+    ) -> Starfield {
         let n = count.unwrap_or_else(|| default_count(dw, dh));
         let mut stars = Vec::with_capacity(n);
         for _ in 0..n {
             let layer = weighted_layer(rng);
+            let (x, y) = (rng.range(0.0, dw), rng.range(0.0, dh));
             stars.push(Star {
-                x: rng.range(0.0, dw),
-                y: rng.range(0.0, dh),
+                x,
+                y,
+                px: x,
+                py: y,
                 layer,
                 base: match layer {
                     0 => rng.range(0.25, 0.55) as f32,
@@ -78,6 +124,7 @@ impl Starfield {
             stars,
             dw,
             dh,
+            cfg,
             age: 0.0,
             dt: 1.0 / fps.max(1.0),
             meteor: None,
@@ -98,15 +145,29 @@ impl Starfield {
         }
     }
 
-    /// Drift per second for a layer, in dots. Slow on purpose: the sky should
-    /// feel still, with just enough motion to read as alive.
-    fn drift(layer: usize, dh: f64) -> (f64, f64) {
-        let base = (dh / 140.0).clamp(1.5, 8.0);
-        match layer {
-            0 => (base * 0.25, base * 0.12),
-            1 => (base * 0.6, base * 0.3),
-            _ => (base, base * 0.5),
-        }
+    /// Outward velocity for a star: radial direction from the centre, with a
+    /// hyperdrive term that accelerates stars the further out they are, times
+    /// the per-layer factor and the configured speed. A free function of the
+    /// dimensions (rather than `&self`) so [`Starfield::advance`] can call it
+    /// while iterating mutably.
+    fn velocity_at(dw: f64, dh: f64, cfg: StarCfg, s: &Star) -> (f64, f64) {
+        let (cx, cy) = (dw * 0.5, dh * 0.5);
+        let (dx, dy) = (s.x - cx, s.y - cy);
+        let r = (dx * dx + dy * dy).sqrt();
+        let max_r = (dw * dw + dh * dh).sqrt() * 0.5;
+        let (ux, uy) = if r > 1e-6 { (dx / r, dy / r) } else { (1.0, 0.0) };
+        // Base drift so the centre is never dead still, plus warp gain with
+        // distance: near-centre stars crawl, edge stars streak.
+        let base = (dh / 60.0).clamp(3.0, 18.0)
+            * cfg.speed
+            * match s.layer {
+                0 => 0.35,
+                1 => 0.7,
+                _ => 1.0,
+            };
+        let gain = base * cfg.warp * (r / max_r.max(1.0));
+        let v = base * 0.3 + gain;
+        (ux * v, uy * v)
     }
 }
 
@@ -131,16 +192,30 @@ fn weighted_layer(rng: &mut Rng) -> usize {
 impl GatherPhase for Starfield {
     fn advance(&mut self) {
         self.age += self.dt;
+        // Copy out what velocity() needs: it borrows self while stars are
+        // mutably borrowed below.
+        let (dw, dh, cfg, age, dt) = (self.dw, self.dh, self.cfg, self.age, self.dt);
         for s in &mut self.stars {
-            let (dx, dy) = Starfield::drift(s.layer, self.dh);
-            s.x += dx * self.dt;
-            s.y += dy * self.dt;
-            // Wrap around the edges so the density stays constant.
-            if s.x >= self.dw {
-                s.x -= self.dw;
-            }
-            if s.y >= self.dh {
-                s.y -= self.dh;
+            s.px = s.x;
+            s.py = s.y;
+            let (vx, vy) = Self::velocity_at(dw, dh, cfg, s);
+            s.x += vx * dt;
+            s.y += vy * dt;
+            // Recycle past the edge back near the centre: warp is a fountain,
+            // not a drain. Jitter the respawn so returnees do not line up.
+            if s.x < -4.0 || s.y < -4.0 || s.x > dw + 4.0 || s.y > dh + 4.0 {
+                let (cx, cy) = (dw * 0.5, dh * 0.5);
+                let mut dummy = Rng::new(
+                    (s.x.to_bits() ^ s.y.to_bits().wrapping_mul(31))
+                        .wrapping_add((age * 1e6) as u64)
+                        | 1,
+                );
+                let th = dummy.range(0.0, std::f64::consts::TAU);
+                let rr = dummy.range(0.0, dw.min(dh) * 0.06);
+                s.x = cx + rr * th.cos();
+                s.y = cy + rr * th.sin();
+                s.px = s.x;
+                s.py = s.y;
             }
         }
 
@@ -180,13 +255,33 @@ impl GatherPhase for Starfield {
     }
 
     fn draw(&self, canvas: &mut Canvas, pal: &Palette, _style: Style) {
+        let radius = self.cfg.size;
         for s in &self.stars {
             let tw = self.twinkle_at(s);
             let b = s.base * (0.35 + 0.65 * tw);
             let col = self.star_colour(s, pal);
             let colour =
                 palette::mix(pal.background, col, (0.30 + 0.70 * b).clamp(0.0, 1.0));
-            canvas.dot(s.x.round() as i32, s.y.round() as i32, colour, 0.4 + b);
+            let (x0, y0) = (s.x.round() as i32, s.y.round() as i32);
+            let (x1, y1) = (s.px.round() as i32, s.py.round() as i32);
+            let stretch = ((x0 - x1).abs() + (y0 - y1).abs()) as f32;
+            // Motion streak: the faster the star, the longer and brighter its
+            // tail. Near-centre stars are near-static points; edge stars are
+            // streaks. The disc gives near stars real size.
+            let r = star_radius(s.layer, radius);
+            let inten = 0.4 + b + stretch.min(12.0) * 0.12;
+            if r > 0 {
+                let disc = Canvas::disc(r);
+                for &(ox, oy) in &disc {
+                    canvas.dot(x0 + ox, y0 + oy, colour, 0.4 + b);
+                }
+            }
+            if x0 == x1 && y0 == y1 && r > 0 {
+                // Static and already stamped: nothing more to draw.
+            } else {
+                canvas.line(x1, y1, x0, y0, colour, inten, 0);
+            }
+            canvas.dot(x0, y0, colour, 2.0 + b * 4.0);
         }
         if let Some(m) = &self.meteor {
             let fade = (m.life / m.max_life).clamp(0.0, 1.0) as f32;
@@ -222,7 +317,7 @@ mod tests {
 
     fn field(seeds: u64, dw: f64, dh: f64, count: Option<usize>) -> Starfield {
         let mut rng = Rng::new(seeds);
-        Starfield::new(dw, dh, &mut rng, count, 60.0)
+        Starfield::new(dw, dh, &mut rng, count, 60.0, StarCfg::default())
     }
 
     #[test]
@@ -247,15 +342,78 @@ mod tests {
     }
 
     #[test]
-    fn drift_wraps_so_stars_never_leave() {
+    fn warp_recycles_stars_so_none_escape() {
         let mut f = field(11, 200.0, 100.0, Some(200));
         for _ in 0..3600 {
             f.advance();
         }
         for s in &f.stars {
-            assert!((0.0..200.0).contains(&s.x), "star escaped in x: {}", s.x);
-            assert!((0.0..100.0).contains(&s.y), "star escaped in y: {}", s.y);
+            assert!(
+                (-4.0..204.0).contains(&s.x),
+                "star escaped in x: {}",
+                s.x
+            );
+            assert!(
+                (-4.0..104.0).contains(&s.y),
+                "star escaped in y: {}",
+                s.y
+            );
         }
+    }
+
+    #[test]
+    fn warp_moves_stars_outward() {
+        // With warp at full and twinkle irrelevant, the mean radius must grow.
+        // Measured over 45 frames: long enough to move, short enough that no
+        // star has recycled back to the centre yet (which would drag the mean
+        // back down and make this assert on the wrong thing).
+        let mut f = field(21, 400.0, 200.0, Some(400));
+        let mean_r = |f: &Starfield| {
+            f.stars
+                .iter()
+                .map(|s| ((s.x - 200.0).powi(2) + (s.y - 100.0).powi(2)).sqrt())
+                .sum::<f64>()
+                / 400.0
+        };
+        let r0 = mean_r(&f);
+        for _ in 0..45 {
+            f.advance();
+        }
+        let r1 = mean_r(&f);
+        assert!(r1 > r0, "warp did not push stars outward: {r0} -> {r1}");
+    }
+
+    #[test]
+    fn calm_sky_barely_moves() {
+        let mut rng = Rng::new(33);
+        let mut f = Starfield::new(
+            400.0,
+            200.0,
+            &mut rng,
+            Some(100),
+            60.0,
+            StarCfg { size: 1.0, speed: 0.2, warp: 0.0 },
+        );
+        let before: Vec<(f64, f64)> = f.stars.iter().map(|s| (s.x, s.y)).collect();
+        for _ in 0..60 {
+            f.advance();
+        }
+        let moved: f64 = f
+            .stars
+            .iter()
+            .zip(&before)
+            .map(|(s, (x, y))| ((s.x - x).powi(2) + (s.y - y).powi(2)).sqrt())
+            .sum::<f64>()
+            / 100.0;
+        assert!(moved < 3.0, "calm sky moved too far: {moved}");
+    }
+
+    #[test]
+    fn star_radius_grows_with_size_and_layer() {
+        assert_eq!(star_radius(0, 99.0), 0, "far stars stay single dots");
+        assert_eq!(star_radius(1, 0.0), 0);
+        assert!(star_radius(2, 1.2) > star_radius(1, 1.2));
+        assert!(star_radius(1, 2.0) >= star_radius(1, 1.0));
     }
 
     #[test]

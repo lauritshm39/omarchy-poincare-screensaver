@@ -6,8 +6,9 @@ terminal renderer, one morph engine and one launcher.
 - **poincare**: a periodic solution of the Newtonian three-body problem
   traced out in the terminal, which then collapses into the Omarchy logo —
   or any name you like.
-- **starry**: a twinkling starfield, with the odd shooting star, that gathers
-  into the logo.
+- **starry**: a hyperdrive warp that arrives at a black hole with the logo
+  over it — twinkling stars stream outward with motion streaks, then gather
+  into the branding revealed over a glowing accretion ring.
 
 In 1890 Poincaré showed the three-body problem has no general closed-form
 solution and depends sensitively on its initial conditions. What does exist is a

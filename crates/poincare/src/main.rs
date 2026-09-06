@@ -222,9 +222,10 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
             }
             // Starry's options: accepted and ignored so one config file
             // serves every screensaver in the collection.
-            "--stars" => {
+            "--stars" | "--star-size" | "--speed" | "--warp" | "--hole-size" => {
                 let _ = value(&mut i, "--stars");
             }
+            "--black-hole" | "--no-black-hole" => {}
             "--stroke" => {
                 if let Some(n) = number(&mut i, "--stroke") {
                     o.stroke = Some(n.clamp(0.0, 12.0));
@@ -475,6 +476,8 @@ fn run(o: Opts) -> std::io::Result<()> {
         body: o.body,
         theme: o.theme.clone(),
         art_scale: o.art_scale,
+        black_hole: false,
+        hole_size: 0.3,
     };
 
     stage::run_stage(&stage, &art, &mut rng, o.managed, |rng, canvas| {
@@ -632,7 +635,11 @@ mod tests {
     /// next option.
     #[test]
     fn launcher_only_options_are_accepted_and_ignored() {
-        let o = parse(&["--font-size", "8", "--screensaver", "random", "--stars", "800", "--sim", "7"]);
+        let o = parse(&[
+            "--font-size", "8", "--screensaver", "random", "--stars", "800", "--star-size",
+            "2", "--speed", "3", "--warp", "0.5", "--hole-size", "0.4", "--black-hole",
+            "--sim", "7",
+        ]);
         assert_eq!(o.sim, 7.0);
     }
 

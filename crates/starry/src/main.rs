@@ -12,7 +12,7 @@ use omarchy_screensaver_core::palette::{self, Palette};
 use omarchy_screensaver_core::rng::Rng;
 use omarchy_screensaver_core::stage::{self, StageArt, StageOpts};
 use omarchy_screensaver_core::{say, sayln, terminal_is_gone, warn};
-use starry::Starfield;
+    use starry::{StarCfg, Starfield};
 
 const HELP: &str = "\
 omarchy-screensaver-starry -- starry-night screensaver for Omarchy
@@ -23,6 +23,11 @@ USAGE:
 SKY
         --stars <n>            How many stars (default: scaled to the canvas,
                                400..4000)
+        --star-size <x>        Star disc multiplier (default: 1.2, 0 keeps all
+                               stars as single dots)
+        --speed <x>            Outward drift multiplier (default: 2.0)
+        --warp <x>             Hyperdrive gain: extra outward speed with
+                               distance from centre (default: 1.0, 0 is calm)
         --palette              Show the colours resolved from the current theme
 
 TARGET
@@ -33,6 +38,11 @@ TARGET
         --text-scale <n>       Enlarge --text by this factor (default: 1)
         --art-scale <auto|n>   Enlarge block art to suit the terminal size
                                (default: auto)
+        --black-hole           Reveal the art over a black hole with a glowing
+                               accretion ring (default: on)
+        --no-black-hole        Gather into the art with no black hole
+        --hole-size <x>        Black-hole radius as a fraction of the smaller
+                               canvas dimension (default: 0.3)
 
 APPEARANCE
         --font-size <n>        Terminal font size, and so the resolution of the
@@ -65,6 +75,11 @@ CONFIG
 
 struct Opts {
     stars: Option<usize>,
+    star_size: f64,
+    speed: f64,
+    warp: f64,
+    black_hole: bool,
+    hole_size: f64,
     file: Option<String>,
     text: Option<String>,
     text_scale: usize,
@@ -85,6 +100,11 @@ impl Default for Opts {
     fn default() -> Self {
         Opts {
             stars: None,
+            star_size: 1.2,
+            speed: 2.0,
+            warp: 1.0,
+            black_hole: true,
+            hole_size: 0.3,
             file: None,
             text: None,
             text_scale: 1,
@@ -164,6 +184,28 @@ fn apply(o: &mut Opts, args: &[String], strict: bool) -> Action {
                             reject(format!("--stars expects a number, got {v:?}"));
                         }
                     }
+                }
+            }
+            "--star-size" => {
+                if let Some(n) = number(&mut i, "--star-size") {
+                    o.star_size = n.clamp(0.0, 4.0);
+                }
+            }
+            "--speed" => {
+                if let Some(n) = number(&mut i, "--speed") {
+                    o.speed = n.clamp(0.0, 10.0);
+                }
+            }
+            "--warp" => {
+                if let Some(n) = number(&mut i, "--warp") {
+                    o.warp = n.clamp(0.0, 4.0);
+                }
+            }
+            "--black-hole" => o.black_hole = true,
+            "--no-black-hole" => o.black_hole = false,
+            "--hole-size" => {
+                if let Some(n) = number(&mut i, "--hole-size") {
+                    o.hole_size = n.clamp(0.05, 0.8);
                 }
             }
             "-f" | "--file" => {
@@ -325,11 +367,14 @@ fn run(o: Opts) -> std::io::Result<()> {
         body: o.body,
         theme: o.theme.clone(),
         art_scale: o.art_scale,
+        black_hole: o.black_hole,
+        hole_size: o.hole_size,
     };
 
+    let cfg = StarCfg { size: o.star_size, speed: o.speed, warp: o.warp };
     stage::run_stage(&stage, &art, &mut rng, o.managed, |rng, canvas| {
         let (dw, dh) = (canvas.dots_w() as f64, canvas.dots_h() as f64);
-        Starfield::new(dw, dh, rng, o.stars, o.fps)
+        Starfield::new(dw, dh, rng, o.stars, o.fps, cfg)
     })
 }
 
@@ -372,11 +417,28 @@ mod tests {
 
     #[test]
     fn options_are_applied() {
-        let o = parse(&["--sim", "3", "--fps", "30", "--stars", "800", "--once"]);
+        let o = parse(&[
+            "--sim", "3", "--fps", "30", "--stars", "800", "--star-size", "2",
+            "--speed", "3", "--warp", "0.5", "--hole-size", "0.4", "--once",
+        ]);
         assert_eq!(o.sim, 3.0);
         assert_eq!(o.fps, 30.0);
         assert_eq!(o.stars, Some(800));
+        assert_eq!(o.star_size, 2.0);
+        assert_eq!(o.speed, 3.0);
+        assert_eq!(o.warp, 0.5);
+        assert_eq!(o.hole_size, 0.4);
         assert!(o.once);
+    }
+
+    #[test]
+    fn sky_and_hole_options_are_clamped() {
+        assert_eq!(parse(&["--star-size", "99"]).star_size, 4.0);
+        assert_eq!(parse(&["--speed", "-1"]).speed, 0.0);
+        assert_eq!(parse(&["--warp", "99"]).warp, 4.0);
+        assert_eq!(parse(&["--hole-size", "99"]).hole_size, 0.8);
+        assert!(parse(&["--black-hole"]).black_hole);
+        assert!(!parse(&["--black-hole", "--no-black-hole"]).black_hole);
     }
 
     #[test]
