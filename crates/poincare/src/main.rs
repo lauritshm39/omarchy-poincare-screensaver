@@ -480,7 +480,7 @@ fn run(o: Opts) -> std::io::Result<()> {
         hole_size: 0.3,
     };
 
-    stage::run_stage(&stage, &art, &mut rng, o.managed, |rng, canvas| {
+    stage::run_stage(&stage, &art, &mut rng, o.managed, |rng, canvas, _ctx| {
         // Grid mode tiles the library; the stage runs one gather phase per
         // cycle, so combine the tiles into a single phase object.
         let mut sims = build_sims(&o, chosen, rng, canvas);

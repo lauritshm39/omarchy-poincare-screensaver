@@ -51,7 +51,12 @@ not on coverage for its own sake:
   that twinkle stays in range, that warp recycles stars so none escape, that
   warp moves stars outward while a calm sky barely moves, that disc radius
   grows with size and layer, that sources cover the canvas rather than
-  clumping, and that far stars outnumber near ones.
+  clumping, that no star spawns inside the hole, that the hole stays clear
+  over time, that rim velocity is tangential, and that far stars outnumber
+  near ones.
+- **`stage`** — the black-hole geometry (`GatherCtx`) is covered through the
+  starry tests above; `draw_black_hole` itself is verified visually via
+  `--once` captures rather than unit tests.
 
 One test is worth knowing about: `every_option_in_the_help_text_is_actually_accepted`
 parses `--help` and feeds every flag it mentions back through the argument

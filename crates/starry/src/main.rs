@@ -25,9 +25,9 @@ SKY
                                400..4000)
         --star-size <x>        Star disc multiplier (default: 1.2, 0 keeps all
                                stars as single dots)
-        --speed <x>            Outward drift multiplier (default: 3.0)
+        --speed <x>            Outward drift multiplier (default: 6.0)
         --warp <x>             Hyperdrive gain: extra outward speed with
-                               distance from centre (default: 2.0, 0 is calm)
+                               distance from centre (default: 3.0, 0 is calm)
         --palette              Show the colours resolved from the current theme
 
 TARGET
@@ -101,8 +101,8 @@ impl Default for Opts {
         Opts {
             stars: None,
             star_size: 1.2,
-            speed: 3.0,
-            warp: 2.0,
+            speed: 6.0,
+            warp: 3.0,
             black_hole: true,
             hole_size: 0.3,
             file: None,
@@ -372,9 +372,10 @@ fn run(o: Opts) -> std::io::Result<()> {
     };
 
     let cfg = StarCfg { size: o.star_size, speed: o.speed, warp: o.warp };
-    stage::run_stage(&stage, &art, &mut rng, o.managed, |rng, canvas| {
+    let want_hole = o.black_hole;
+    stage::run_stage(&stage, &art, &mut rng, o.managed, |rng, canvas, ctx| {
         let (dw, dh) = (canvas.dots_w() as f64, canvas.dots_h() as f64);
-        Starfield::new(dw, dh, rng, o.stars, o.fps, cfg)
+        Starfield::new(dw, dh, rng, o.stars, o.fps, cfg, want_hole.then_some(*ctx))
     })
 }
 

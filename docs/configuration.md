@@ -78,9 +78,9 @@ runs.
 |---|---|---|
 | `--stars <n>` | canvas-scaled | How many stars. Defaults scale with the area, 400..4000. |
 | `--star-size <x>` | `1.2` | Star disc multiplier. Near stars stamp small discs; far stars stay single dots. `0` keeps every star a single dot. |
-| `--speed <x>` | `3.0` | Outward drift multiplier. |
-| `--warp <x>` | `2.0` | Hyperdrive gain: extra outward speed with distance from centre. `0` is a calm sky. |
-| `--black-hole` / `--no-black-hole` | on | Reveal the art over a black hole with a glowing accretion ring. |
+| `--speed <x>` | `6.0` | Outward drift multiplier. |
+| `--warp <x>` | `3.0` | Hyperdrive gain: extra outward speed with distance from centre. `0` is a calm sky. |
+| `--black-hole` / `--no-black-hole` | on | Reveal the art over a black hole with a glowing accretion ring. During the gather phase the hole is already there: stars swirl around it, nothing is drawn over its disc, and swallowed stars respawn upfield. Meteors flare out when they hit it. |
 | `--hole-size <x>` | `0.3` | Black-hole radius as a fraction of the smaller canvas dimension. |
 
 ### What it morphs into

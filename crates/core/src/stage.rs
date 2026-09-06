@@ -101,12 +101,16 @@ enum Phase {
 /// cycle (so e.g. poincare picks a new random orbit); `managed` is whether the
 /// launcher owns keyboard input (true under `--managed`, where exit arrives as
 /// a signal or a dead terminal instead of a keypress).
+///
+/// `gather_ctx` hands the gather phase the canvas geometry and the black-hole
+/// geometry for this cycle, so it can e.g. keep stars out of the hole and draw
+/// the hole behind its own animation. Poincare ignores it.
 pub fn run_stage<G>(
     o: &StageOpts,
     art: &StageArt,
     rng: &mut Rng,
     managed: bool,
-    mut build: impl FnMut(&mut Rng, &Canvas) -> G,
+    mut build: impl FnMut(&mut Rng, &Canvas, &GatherCtx) -> G,
 ) -> std::io::Result<()>
 where
     G: GatherPhase,
@@ -134,7 +138,8 @@ where
         let pal = Palette::load(&o.theme);
         out.write_all(format!("\x1b]11;{}\x07", palette::hex(pal.background)).as_bytes())?;
         renderer.invalidate();
-        let mut gather = build(rng, &canvas);
+        let ctx = GatherCtx::new(&canvas, &scaled, o.hole_size);
+        let mut gather = build(rng, &canvas, &ctx);
         let mut phase = Phase::Gather;
         let mut morph: Option<Morph> = None;
         let mut t0 = Instant::now();
@@ -178,6 +183,9 @@ where
             match phase {
                 Phase::Gather => {
                     gather.advance();
+                    if o.black_hole {
+                        draw_black_hole_ctx(&mut canvas, &ctx, &pal, style);
+                    }
                     gather.draw(&mut canvas, &pal, style);
                     if t >= o.gather {
                         let mut src = Vec::new();
@@ -192,9 +200,19 @@ where
                     let m = morph.as_ref().unwrap();
                     let p = (t / o.morph).min(1.0) as f32;
                     if o.black_hole {
-                        draw_black_hole(&mut canvas, &scaled, &pal, style, o.hole_size);
+                        draw_black_hole_ctx(&mut canvas, &ctx, &pal, style);
                     }
-                    draw_particles(&mut canvas, m, p, 1.0, &mut arrival, &mut arrival_colour, &pal, style);
+                    draw_particles_occluded(
+                        &mut canvas,
+                        m,
+                        p,
+                        1.0,
+                        &mut arrival,
+                        &mut arrival_colour,
+                        &pal,
+                        style,
+                        o.black_hole.then_some(&ctx),
+                    );
                     draw_art(&mut canvas, &scaled, &arrival, &arrival_colour, 0.0, &pal);
                     if t >= o.morph {
                         arrival.iter_mut().for_each(|a| *a = 1.0);
@@ -207,7 +225,7 @@ where
                     // single tone, so it ends looking like the logo.
                     let settle = ((t / 1.4) as f32).clamp(0.0, 1.0);
                     if o.black_hole {
-                        draw_black_hole(&mut canvas, &scaled, &pal, style, o.hole_size);
+                        draw_black_hole_ctx(&mut canvas, &ctx, &pal, style);
                     }
                     draw_art(&mut canvas, &scaled, &arrival, &arrival_colour, settle, &pal);
                     if t >= o.hold {
@@ -284,13 +302,90 @@ pub fn glow(c: &mut Canvas, x: f64, y: f64, col: &palette::BodyColour, bg: Rgb, 
     }
 }
 
+/// Geometry of the black hole for one cycle, shared between the stage's own
+/// backdrop painter and the gather phase (so e.g. starry can swirl around it
+/// and spawn outside it).
+#[derive(Clone, Copy)]
+pub struct GatherCtx {
+    /// Hole centre, in dots.
+    pub cx: f64,
+    pub cy: f64,
+    /// Hole radii (x, y), in dots. The y radius is halved to compensate for
+    /// terminal cells being ~2x taller than wide, so the hole reads as round.
+    pub hole_rx: f64,
+    pub hole_ry: f64,
+    /// Ring outer radii (x, y), in dots.
+    pub ring_rx: f64,
+    pub ring_ry: f64,
+    /// Ring width, in dots (x measure).
+    pub ring_w: f64,
+    /// Canvas size, in dots.
+    pub dw: f64,
+    pub dh: f64,
+}
+
+impl GatherCtx {
+    pub fn new(canvas: &Canvas, art: &target::Art, size_frac: f64) -> GatherCtx {
+        let (dw, dh) = (canvas.dots_w() as f64, canvas.dots_h() as f64);
+        let (ox, oy) = art_origin(canvas, art);
+        // Centre on the art, which is where the eye already is.
+        let (cx, cy) = (
+            (ox + art.width as f64 * 0.5) * 2.0,
+            (oy + art.height as f64 * 0.5) * 4.0,
+        );
+        let frac = size_frac.clamp(0.05, 0.8);
+        let hole_rx = dw.min(dh) * frac;
+        let hole_ry = hole_rx * 0.5;
+        let ring_w = (hole_rx * 0.16).clamp(2.0, 8.0);
+        GatherCtx {
+            cx,
+            cy,
+            hole_rx,
+            hole_ry,
+            ring_rx: hole_rx + ring_w,
+            ring_ry: hole_ry + ring_w * 0.5,
+            ring_w,
+            dw,
+            dh,
+        }
+    }
+
+    /// Ellipse-normalised distance: 1.0 is the ring's outer edge, values
+    /// below `hole_rx / ring_rx` are inside the hole itself.
+    pub fn norm(&self, x: f64, y: f64) -> f64 {
+        let ex = (x - self.cx) / self.ring_rx.max(1.0);
+        let ey = (y - self.cy) / self.ring_ry.max(1.0);
+        (ex * ex + ey * ey).sqrt()
+    }
+
+    /// Ellipse-normalised distance to the hole's own edge (not the ring's):
+    /// 1.0 is the rim. Cheaper than [`GatherCtx::norm`] and the right measure
+    /// for swelling the no-spawn / swirl zones with speed.
+    pub fn rim_norm(&self, x: f64, y: f64) -> f64 {
+        let ex = (x - self.cx) / self.hole_rx.max(1.0);
+        let ey = (y - self.cy) / self.hole_ry.max(1.0);
+        (ex * ex + ey * ey).sqrt()
+    }
+
+    /// Normalised radius of the hole's edge.
+    pub fn hole_edge(&self) -> f64 {
+        self.hole_rx / self.ring_rx.max(1.0)
+    }
+
+    /// True when the dot is swallowed by the hole (strictly inside the disc,
+    /// not on the ring).
+    pub fn occludes(&self, x: f64, y: f64) -> bool {
+        self.norm(x, y) <= self.hole_edge()
+    }
+}
+
 /// A black disc ringed by a glowing accretion ring, centred on the art.
 ///
 /// The art is drawn after this, so the branding reads as sitting over the
 /// hole. The ring wears the theme's first body colour; the disc is the theme
 /// background pushed toward black, so the hole reads as a hole on light
-/// themes too. `size_frac` is the hole radius as a fraction of the smaller
-/// canvas dimension.
+/// themes too. Thin wrapper over [`GatherCtx`] for callers that only have the
+/// canvas and art to hand.
 pub fn draw_black_hole(
     canvas: &mut Canvas,
     art: &target::Art,
@@ -298,31 +393,20 @@ pub fn draw_black_hole(
     style: Style,
     size_frac: f64,
 ) {
-    let (dw, dh) = (canvas.dots_w() as f64, canvas.dots_h() as f64);
-    let (ox, oy) = art_origin(canvas, art);
-    // Centre on the art, which is where the eye already is.
-    let (cx, cy) = (
-        (ox + art.width as f64 * 0.5) * 2.0,
-        (oy + art.height as f64 * 0.5) * 4.0,
-    );
-    let frac = size_frac.clamp(0.05, 0.8);
-    // Braille dots are near-square, but terminal cells are ~2x taller than
-    // wide: a circle in dot space renders as a tall ellipse on screen. Halve
-    // the y radius to compensate, so the hole reads as round.
-    let hole_rx = dw.min(dh) * frac;
-    let hole_ry = hole_rx * 0.5;
-    let ring_w = (hole_rx * 0.16).clamp(2.0, 8.0);
-    let ring_rx = hole_rx + ring_w;
-    let ring_ry = hole_ry + ring_w * 0.5;
+    let ctx = GatherCtx::new(canvas, art, size_frac);
+    draw_black_hole_ctx(canvas, &ctx, pal, style);
+}
+
+/// Same as [`draw_black_hole`], reusing a precomputed [`GatherCtx`].
+pub fn draw_black_hole_ctx(canvas: &mut Canvas, ctx: &GatherCtx, pal: &Palette, style: Style) {
+    let (cx, cy) = (ctx.cx, ctx.cy);
+    let (ring_rx, ring_ry, ring_w) = (ctx.ring_rx, ctx.ring_ry, ctx.ring_w);
     let glow_r = style.body.max(2) as f64;
 
-    // Ellipse-normalised distance: 1.0 is the ring's outer edge.
-    let norm = |x: f64, y: f64| {
-        let ex = (x - cx) / ring_rx.max(1.0);
-        let ey = (y - cy) / ring_ry.max(1.0);
-        (ex * ex + ey * ey).sqrt()
-    };
-    let hole_edge = hole_rx / ring_rx;
+    let (dw, dh) = (ctx.dw, ctx.dh);
+    let hole_ry = ctx.hole_ry;
+    let hole_rx = ctx.hole_rx;
+    let hole_edge = ctx.hole_edge();
 
     let x0 = (cx - ring_rx - glow_r).max(0.0) as i32;
     let x1 = (cx + ring_rx + glow_r).min(dw) as i32;
@@ -335,7 +419,7 @@ pub fn draw_black_hole(
 
     for y in y0..=y1 {
         for x in x0..=x1 {
-            let d = norm(x as f64, y as f64);
+            let d = ctx.norm(x as f64, y as f64);
             if d <= hole_edge {
                 // The hole itself: flat dark, punched over whatever is there.
                 canvas.dot(x, y, hole_col, 20.0);
@@ -445,6 +529,24 @@ pub fn draw_particles(
     pal: &Palette,
     style: Style,
 ) {
+    draw_particles_occluded(canvas, m, p, brightness, arrival, arrival_colour, pal, style, None);
+}
+
+/// Same as [`draw_particles`], but particles swallowed by the black hole are
+/// skipped: the hole is drawn before the particles each frame, so anything
+/// painted over its disc would punch a star-coloured dot into the dark.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_particles_occluded(
+    canvas: &mut Canvas,
+    m: &Morph,
+    p: f32,
+    brightness: f32,
+    arrival: &mut [f32],
+    arrival_colour: &mut [Rgb],
+    pal: &Palette,
+    style: Style,
+    hole: Option<&GatherCtx>,
+) {
     // Particles are the trail broken up, so they carry the same weight.
     let brush = Canvas::disc((style.stroke - 1).max(0));
     for particle in &m.particles {
@@ -458,6 +560,9 @@ pub fn draw_particles(
             if local >= 0.995 {
                 continue;
             }
+        }
+        if hole.is_some_and(|h| h.occludes(x, y)) {
+            continue;
         }
         // Brighten on approach: the cloud arrives hot, then the glyphs take
         // over and cool to the resting colour.
