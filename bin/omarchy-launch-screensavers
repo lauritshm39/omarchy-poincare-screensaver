@@ -14,6 +14,9 @@
 # so the window rules, fonts and padding are identical.
 #
 # Usage: omarchy-launch-screensavers [poincare|starry|omarchy|random] [force]
+#
+# To launch one screensaver directly, use omarchy-launch-poincare or
+# omarchy-launch-starry -- thin wrappers that pass a fixed mode here.
 
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 # The new canonical path first, then the legacy poincare one, then the env
@@ -50,8 +53,7 @@ if [[ $MODE == omarchy ]]; then
   exec omarchy-launch-screensaver $FORCE
 fi
 
-# Map the mode to the binary. starry is a stub until feature/starry-gather
-# lands; fall back to poincare with a warning rather than a black screen.
+# Map the mode to the binary.
 case $MODE in
 poincare) BIN=omarchy-screensaver-poincare ;;
 starry) BIN=omarchy-screensaver-starry ;;

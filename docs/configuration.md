@@ -49,6 +49,13 @@ omarchy-launch-screensavers omarchy    # stock, just this once
 omarchy-launch-screensavers random
 ```
 
+Or launch one screensaver directly, bypassing the chooser entirely:
+
+```bash
+omarchy-launch-poincare                # just the three-body simulation
+omarchy-launch-starry                  # just the starfield
+```
+
 ## Options
 
 `omarchy-screensaver-poincare --help` and `omarchy-screensaver-starry --help`

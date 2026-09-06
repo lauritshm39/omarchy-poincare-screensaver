@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Launch the starry-night screensaver, fullscreen on every monitor.
+#
+# Thin wrapper around omarchy-launch-screensavers: passes a fixed mode and
+# forwards any extra argument (notably `force`, which bypasses the
+# screensaver-off toggle).
+#
+# Usage: omarchy-launch-starry [force]
+
+exec omarchy-launch-screensavers starry "$@"

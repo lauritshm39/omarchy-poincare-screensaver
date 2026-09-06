@@ -75,6 +75,8 @@ install -m755 "$here/target/release/omarchy-screensaver-poincare" "$BIN_DIR/omar
 install -m755 "$here/target/release/omarchy-screensaver-starry" "$BIN_DIR/omarchy-screensaver-starry"
 install -m755 "$here/bin/omarchy-screensaver-run" "$BIN_DIR/omarchy-screensaver-run"
 install -m755 "$here/bin/omarchy-launch-screensavers" "$BIN_DIR/omarchy-launch-screensavers"
+install -m755 "$here/bin/omarchy-launch-poincare" "$BIN_DIR/omarchy-launch-poincare"
+install -m755 "$here/bin/omarchy-launch-starry" "$BIN_DIR/omarchy-launch-starry"
 
 # Backwards compatibility with the single-screensaver layout: the old names
 # stay as thin shims for one release so existing keybindings, the existing
@@ -138,7 +140,9 @@ Try it now (a whole cycle in a few seconds, in this terminal):
     omarchy-screensaver-poincare --sim 3 --once
 
 Or as Omarchy launches it (the logo arrives after the 10s orbit phase):
-    omarchy-launch-screensavers
+    omarchy-launch-screensavers                 # whichever --screensaver selects
+    omarchy-launch-poincare                     # just the three-body simulation
+    omarchy-launch-starry                       # just the starfield
     omarchy-screensaver-poincare --list      # the orbit library
     omarchy-screensaver-poincare --verify    # check every orbit really is periodic
     omarchy-screensaver-poincare --layout grid  # the whole library at once

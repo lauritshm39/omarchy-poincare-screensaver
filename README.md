@@ -71,6 +71,12 @@ omarchy-screensaver-starry --stars 1500            # a denser sky
 
 Choose between them (and the stock screensaver) with `--screensaver` —
 see **[Configuration](docs/configuration.md#choosing-which-screensaver-runs)**.
+Or launch one directly:
+
+```bash
+omarchy-launch-poincare                # just the three-body simulation
+omarchy-launch-starry                  # just the starfield
+```
 
 Settings live in `~/.config/omarchy-screensavers/config`, since the launcher passes
 no arguments of its own — see **[Configuration](docs/configuration.md)**.

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Launch the Poincare three-body screensaver, fullscreen on every monitor.
+#
+# Thin wrapper around omarchy-launch-screensavers: passes a fixed mode and
+# forwards any extra argument (notably `force`, which bypasses the
+# screensaver-off toggle).
+#
+# Usage: omarchy-launch-poincare [force]
+
+exec omarchy-launch-screensavers poincare "$@"
