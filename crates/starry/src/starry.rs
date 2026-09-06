@@ -156,8 +156,10 @@ impl Starfield {
         let r = (dx * dx + dy * dy).sqrt();
         let max_r = (dw * dw + dh * dh).sqrt() * 0.5;
         let (ux, uy) = if r > 1e-6 { (dx / r, dy / r) } else { (1.0, 0.0) };
-        // Base drift so the centre is never dead still, plus warp gain with
-        // distance: near-centre stars crawl, edge stars streak.
+        // Base drift so the centre is never dead still, plus a quadratic warp
+        // gain with distance: near-centre stars crawl while edge stars streak.
+        // Quadratic (not linear) is what sells hyperdrive -- most of the sky
+        // stays readable and only the rim really flies.
         let base = (dh / 60.0).clamp(3.0, 18.0)
             * cfg.speed
             * match s.layer {
@@ -165,8 +167,8 @@ impl Starfield {
                 1 => 0.7,
                 _ => 1.0,
             };
-        let gain = base * cfg.warp * (r / max_r.max(1.0));
-        let v = base * 0.3 + gain;
+        let t = (r / max_r.max(1.0)).clamp(0.0, 1.0);
+        let v = (base * 0.3 + base * cfg.warp * 6.0 * t * t).min(1200.0);
         (ux * v, uy * v)
     }
 }
@@ -363,24 +365,30 @@ mod tests {
 
     #[test]
     fn warp_moves_stars_outward() {
-        // With warp at full and twinkle irrelevant, the mean radius must grow.
-        // Measured over 45 frames: long enough to move, short enough that no
-        // star has recycled back to the centre yet (which would drag the mean
-        // back down and make this assert on the wrong thing).
+        // Stars that survive the whole window must end further out than they
+        // started. (The mean over all stars cannot be used: edge stars that
+        // recycle back to the centre during the window drag it back down.)
         let mut f = field(21, 400.0, 200.0, Some(400));
-        let mean_r = |f: &Starfield| {
-            f.stars
-                .iter()
-                .map(|s| ((s.x - 200.0).powi(2) + (s.y - 100.0).powi(2)).sqrt())
-                .sum::<f64>()
-                / 400.0
-        };
-        let r0 = mean_r(&f);
+        let r0: Vec<f64> = f
+            .stars
+            .iter()
+            .map(|s| ((s.x - 200.0).powi(2) + (s.y - 100.0).powi(2)).sqrt())
+            .collect();
         for _ in 0..45 {
             f.advance();
         }
-        let r1 = mean_r(&f);
-        assert!(r1 > r0, "warp did not push stars outward: {r0} -> {r1}");
+        let mut grown = 0;
+        for (s, r) in f.stars.iter().zip(&r0) {
+            let r1 = ((s.x - 200.0).powi(2) + (s.y - 100.0).powi(2)).sqrt();
+            // Recycled stars come back near the centre; only count the rest.
+            if r1 > 20.0 && r1 > *r {
+                grown += 1;
+            }
+        }
+        assert!(
+            grown * 100 / 400 > 80,
+            "warp did not push stars outward: only {grown}/400 grew"
+        );
     }
 
     #[test]

@@ -25,9 +25,9 @@ SKY
                                400..4000)
         --star-size <x>        Star disc multiplier (default: 1.2, 0 keeps all
                                stars as single dots)
-        --speed <x>            Outward drift multiplier (default: 2.0)
+        --speed <x>            Outward drift multiplier (default: 3.0)
         --warp <x>             Hyperdrive gain: extra outward speed with
-                               distance from centre (default: 1.0, 0 is calm)
+                               distance from centre (default: 2.0, 0 is calm)
         --palette              Show the colours resolved from the current theme
 
 TARGET
@@ -101,8 +101,8 @@ impl Default for Opts {
         Opts {
             stars: None,
             star_size: 1.2,
-            speed: 2.0,
-            warp: 1.0,
+            speed: 3.0,
+            warp: 2.0,
             black_hole: true,
             hole_size: 0.3,
             file: None,
