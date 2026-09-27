@@ -88,7 +88,7 @@ The cycle is gather (orbit 10s, starfield 8s) → collapse into the logo (2.6s)
 ## Tests
 
 ```bash
-cargo test --release    # 72 tests, about a second
+cargo test --release    # 97 tests, about a second
 ```
 
 `omarchy-screensaver-poincare --verify` is the other check worth running: it re-measures

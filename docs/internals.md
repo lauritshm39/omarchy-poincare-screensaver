@@ -17,7 +17,7 @@ gather is the shared stage machine.
 ## Tests
 
 ```bash
-cargo test --release      # 72 tests, ~1s
+cargo test --release      # 97 tests, ~1s
 cargo test                # same, ~12s (the physics tests are integration-heavy)
 ```
 
